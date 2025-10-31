@@ -6,7 +6,11 @@ A system for checking whether research triples are supported by PubMed abstracts
 
 This system checks whether a given research triple (e.g., `['SIX1', 'affects', 'Cell Proliferation']`) is supported by a list of PubMed IDs (PMIDs). It:
 
-1. **Normalizes entities** using UMLS, ARAX and Node Normalization APIs to find semantic synonyms
+1. **Normalizes entities** using a multi-source approach:
+   - **HGNC** (Hugo Gene Nomenclature Committee) for gene/protein entities
+   - **ARAX TRAPI API** to convert names to CURIEs
+   - **Node Normalization API** to find equivalent identifiers
+   - **UMLS** (Unified Medical Language System) for additional medical term synonyms
 2. **Extracts abstracts** from PMIDs using NCBI E-utilities
 3. **Checks support** using local LLM inference via Ollama
 4. **Reports results** with confidence scores and supporting sentences
