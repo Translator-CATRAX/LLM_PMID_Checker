@@ -12,7 +12,9 @@ This system checks whether a given research triple (e.g., `['SIX1', 'affects', '
    - **Node Normalization API** to find equivalent identifiers
    - **UMLS** (Unified Medical Language System) for additional medical term synonyms
 2. **Extracts abstracts** from PMIDs using NCBI E-utilities
-3. **Checks support** using local LLM inference via Ollama
+3. **Checks support** using AI models:
+   - **Local models** with **concurrent batch processing** via Ollama (Hermes 4, GPT-OSS)
+   - **Cloud models** via OpenAI API (GPT-5 nano, GPT-5 mini)
 4. **Reports results** with confidence scores and supporting sentences
 
 ## Quick Start
@@ -49,13 +51,10 @@ Create a `.env` file:
 # Ollama Configuration  
 OLLAMA_BASE_URL=http://localhost:11434
 
-# HERMES Configuration
-HERMES_MODEL=hermes4:70b
-
-# GPT-OSS Configuration
-GPT_OSS_MODEL=gpt-oss:20b
-GPT_OSS_REASONING=high
-GPT_OSS_SIZE=20b
+# Available Ollama models (comma-separated list)
+# Add or remove models as needed based on your 'ollama list' output
+# The first model in the list will be used as the default
+AVAILABLE_OLLAMA_MODELS=hermes4:70b-iq4-xs,hermes4:70b-q4-s,hermes4:70b-q4-m,gpt-oss:20b
 
 # NCBI E-utilities Configuration
 NCBI_EMAIL=your.email@example.com
@@ -68,6 +67,22 @@ USE_UMLS=true
 # ARAX and Node Normalization APIs
 # ARAX_BASE_URL=https://arax.transltr.io/api/arax/v1.4
 # NODE_NORM_BASE_URL=https://nodenormalization-sri.renci.org
+
+# OpenAI Configuration
+# API key for OpenAI commercial models (GPT-5 nano, GPT-5-mini, etc.)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Available OpenAI models (comma-separated list)
+AVAILABLE_OPENAI_MODELS=gpt-5-nano,gpt-5-mini
+
+# Enable OpenAI's built-in web_search tool (Optional)
+# Default: false
+OPENAI_ENABLE_WEB_SEARCH=false
+
+# Batch Processing Configuration
+# Maximum concurrent requests for batch processing (default: 5)
+# Higher values = faster but more memory/CPU usage
+MAX_CONCURRENT_REQUESTS=5
 ```
 
 **Note**: UMLS integration is optional but recommended. It enhances entity name resolution by combining UMLS Terminology Services with Node Normalization. See [UMLS_INTEGRATION.md](UMLS_INTEGRATION.md) for details.
@@ -92,26 +107,29 @@ Then open your browser to `http://localhost:8501` and use the interactive interf
 
 **Basic Triples Using Entity Names:**
 ```bash
-# Using GPT-OSS 20B
+# Using local Ollama models
 python main.py --val_model gpt-oss:20b --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929 16488997
+python main.py --val_model hermes4:70b-q4-m --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
 
-# Using Hermes 4 70B
-python main.py --val_model hermes4:70b --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
+# Using OpenAI cloud models
+python main.py --val_model gpt-5-nano --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929 16488997
+python main.py --val_model gpt-5-mini --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
 ```
 
 **Basic Triples Using CURIEs:**
 ```bash
-# Using GPT-OSS 20B
+# Using local Ollama models
 python main.py --val_model gpt-oss:20b --triple_curie 'NCBIGene:6495' 'affects' 'UMLS:C0596290' --pmids 34513929 16488997
+python main.py --val_model hermes4:70b-q4-s --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids-file pmids.txt
 
-# Using Hermes 4 70B with file input
-python main.py --val_model hermes4:70b --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids-file pmids.txt
+# Using OpenAI cloud models
+python main.py --val_model gpt-5-nano --triple_curie 'NCBIGene:6495' 'affects' 'UMLS:C0596290' --pmids 34513929 16488997
 ```
 
 **Qualified Triples:**
 ```bash
 # With all qualifiers
-python main.py --val_model hermes4:70b --triple_name 'SIX1' 'affects' 'Cell Proliferation' \
+python main.py --val_model hermes4:70b-q4-m --triple_name 'SIX1' 'affects' 'Cell Proliferation' \
   --qualified_predicate 'causes' \
   --qualified_object_aspect 'activity' \
   --qualified_object_direction 'increased' \
@@ -124,13 +142,14 @@ python main.py --val_model gpt-oss:20b --triple_curie 'NCBIGene:6495' 'affects' 
   --pmids 34513929
 
 # With only aspect qualifier  
-python main.py --val_model hermes4:70b --triple_name 'SIX1' 'affects' 'Cell Proliferation' \
+python main.py --val_model hermes4:70b-q4-m --triple_name 'SIX1' 'affects' 'Cell Proliferation' \
   --qualified_predicate 'causes' \
   --qualified_object_aspect 'activity_or_abundance' \
   --pmids 34513929
   
 # With verification enabled
-python main.py --val_model hermes4:70b --checker_model gpt-oss:20b --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
+python main.py --val_model hermes4:70b-q4-m --checker_model gpt-oss:20b --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
+python main.py --val_model gpt-5-nano --checker_model gpt-5-mini --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
 ```
 
 Qualifiers include:
@@ -147,26 +166,40 @@ Qualifiers include:
 The system supports two separate model selections:
 
 1. **Validation Model** (`--val_model`): Model used to evaluate triples against abstracts
-   - Examples: `hermes4:70b`, `gpt-oss:20b`
+   - Local Ollama models: `hermes4:70b-iq4-xs`, `hermes4:70b-q4-s`, `hermes4:70b-q4-m`, `gpt-oss:20b`
+   - OpenAI cloud models: `gpt-5-nano`, `gpt-5-mini`
    - This is the primary model that performs the evaluation
 
 2. **Checker Model** (`--checker_model`): Model used to verify and correct the validation results
    - Optional: If not provided, verification is disabled
    - Can be the same as or different from the validation model
+   - Can mix local and cloud models (e.g., validate with Hermes, verify with GPT-5)
 
 **Example Combinations:**
 ```bash
-# Use Hermes 4 for validation, GPT-OSS for verification
-python main.py --val_model hermes4:70b --checker_model gpt-oss:20b ...
+# Use Hermes 4 (Q4_M) for validation, GPT-OSS for verification
+python main.py --val_model hermes4:70b-q4-m --checker_model gpt-oss:20b ...
 
-# Use GPT-OSS for both validation and verification
-python main.py --val_model gpt-oss:20b --checker_model gpt-oss:20b ...
+# Use GPT-5 models for both validation and verification
+python main.py --val_model gpt-5-nano --checker_model gpt-5-mini ...
 
-# Use Hermes 4 without verification (omit --checker_model)
-python main.py --val_model hermes4:70b ...
+# Mix local and cloud: validate with OpenAI, verify with Ollama
+python main.py --val_model gpt-5-nano --checker_model gpt-oss:20b ...
+
+# Use Hermes 4 (IQ4_XS) without verification (omit --checker_model)
+python main.py --val_model hermes4:70b-iq4-xs ...
 ```
 
 ## Available Models
 
-- **Hermes 4 70B**: Latest model by Nous Research with hybrid reasoning mode, Q4_K_XL quantization (~42GB VRAM)
-- **GPT-OSS 20B**: Model developed by OpenAI (~12GB VRAM)
+### Local Ollama Models
+- **Hermes 4 70B (IQ4_XS)**: Fastest Hermes variant with the lowest VRAM usage (~28 GB). Great for lighter GPUs.
+- **Hermes 4 70B (Q4_S)**: Balanced quality/speed option requiring ~34 GB VRAM. Recommended default for most workflows.
+- **Hermes 4 70B (Q4_M)**: Highest quality quantization requiring ~42 GB VRAM. Best accuracy when resources permit.
+- **GPT-OSS 20B**: Open-source 20B parameter model (~12 GB VRAM). Good baseline and faster responses.
+
+### OpenAI Cloud Models
+- **GPT-5 Nano**: OpenAI's smallest GPT-5 model. Fast, cost-effective, suitable for high-volume tasks.
+- **GPT-5 Mini**: OpenAI's mid-tier GPT-5 model. Balanced performance and cost for general use.
+
+**Note**: OpenAI models require an API key and incur usage costs. See [OpenAI Pricing](https://openai.com/pricing) for details.

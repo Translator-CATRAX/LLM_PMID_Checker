@@ -6,6 +6,7 @@ import logging
 import sys
 from src.triple_evaluator import TripleEvaluatorSystem
 from src.node_normalization import NodeNormalizationClient
+from src.config import settings
 
 def setup_logging(verbose: bool = False):
     """Set up logging configuration."""
@@ -18,23 +19,30 @@ def setup_logging(verbose: bool = False):
 async def main():
     """Main CLI function."""
     parser = argparse.ArgumentParser(
-        description="Check research triples against PMID abstracts using Ollama LLMs",
+        description="Check research triples against PMID abstracts using Ollama or OpenAI LLMs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=        """
 Examples:
   # Basic triples using names (requires node normalization)
+  # Using Ollama models (local)
   python main.py --val_model gpt-oss:20b --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
-  python main.py --val_model hermes4:70b --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
+  python main.py --val_model hermes4:70b-q4-m --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
+  
+  # Using OpenAI models (cloud)
+  python main.py --val_model gpt-5-nano --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
+  python main.py --val_model gpt-5-mini --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
   
   # Basic triples using CURIEs directly
   python main.py --val_model gpt-oss:20b --triple_curie "NCBIGene:6495" "affects" "UMLS:C0596290" --pmids 16186693 29083299
+  python main.py --val_model gpt-5-nano --triple_curie "NCBIGene:6495" "affects" "UMLS:C0596290" --pmids 16186693 29083299
   
   # With qualifiers - must provide qualified_predicate and at least one of qualified_object_aspect/qualified_object_direction
-  python main.py --val_model hermes4:70b --triple_name "SIX1" "affects" "Cell Proliferation" --qualified_predicate "causes" --qualified_object_aspect "activity" --qualified_object_direction "increased" --pmids 16186693 29083299
-  python main.py --val_model gpt-oss:20b --triple_curie "NCBIGene:6495" "affects" "UMLS:C0596290" --qualified_predicate "causes" --qualified_object_direction "upregulated" --pmids 16186693 29083299
+  python main.py --val_model hermes4:70b-q4-m --triple_name "SIX1" "affects" "Cell Proliferation" --qualified_predicate "causes" --qualified_object_aspect "activity" --qualified_object_direction "increased" --pmids 16186693 29083299
+  python main.py --val_model gpt-5-mini --triple_curie "NCBIGene:6495" "affects" "UMLS:C0596290" --qualified_predicate "causes" --qualified_object_direction "upregulated" --pmids 16186693 29083299
   
-  # With verification
-  python main.py --val_model hermes4:70b --checker_model gpt-oss:20b --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
+  # With verification (mixing local and cloud models)
+  python main.py --val_model hermes4:70b-q4-m --checker_model gpt-oss:20b --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
+  python main.py --val_model gpt-5-nano --checker_model gpt-5-mini --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
         """
     )
     
@@ -82,13 +90,13 @@ Examples:
     # Model selection (required)
     parser.add_argument('--val_model',
                                type=str,
-                               default='hermes4:70b',
-                               help='Model for triple validation (e.g., hermes4:70b, gpt-oss:20b).')
+                               default=settings.default_model,
+                               help=f"Model for triple validation (available: {', '.join(settings.available_models)}).")
     
     parser.add_argument('--checker_model',
                                type=str,
                                default=None,
-                               help='Model for verification/checking equivalent names. If not provided, verification is disabled.')
+                               help=f"Model for verification/checking equivalent names. If not provided, verification is disabled. Available: {', '.join(settings.available_models)}")
     
     # Optional arguments
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
@@ -128,7 +136,7 @@ Examples:
         object_names = normalization_client.get_equivalent_names(curie=object_curie)
         
         if not subject_names:
-            print(f"Warning: No equivalent names found for subject CURIE: {subject_curie}", file=sys.stderr)
+            print(f"Error: No equivalent names found for subject CURIE: {subject_curie}", file=sys.stderr)
             subject_names = [subject_curie]
         if not object_names:
             print(f"Warning: No equivalent names found for object CURIE: {object_curie}", file=sys.stderr)
@@ -194,20 +202,32 @@ Examples:
     print("=" * 60)
     
     try:
-        # Determine which models to use
-        validation_model = args.val_model
+        # Validate models
+        try:
+            validation_model = settings.validate_model(args.val_model)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        
+        checker_model = None
+        if args.checker_model:
+            try:
+                checker_model = settings.validate_model(args.checker_model)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return 1
         
         # Log model configuration
         logger.info(f"Using validation model: {validation_model}")
-        if args.checker_model:
-            logger.info(f"Using checker model: {args.checker_model}")
+        if checker_model:
+            logger.info(f"Using checker model: {checker_model}")
             logger.info(f"Verification enabled: True")
         else:
             logger.info(f"Verification disabled (no checker model provided)")
         
         print(f"Validation model: {validation_model}")
-        if args.checker_model:
-            print(f"Checker model: {args.checker_model}")
+        if checker_model:
+            print(f"Checker model: {checker_model}")
         else:
             print("Verification disabled")
         print("=" * 60)
@@ -215,7 +235,7 @@ Examples:
         # Create evaluator system with specified model
         evaluator = TripleEvaluatorSystem(
             llm_provider=validation_model,
-            checker_model=args.checker_model
+            checker_model=checker_model
         )
         
         # Run the evaluation with enriched triple data

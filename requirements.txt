@@ -5,3 +5,4 @@ pydantic>=2.5.0
 streamlit>=1.29.0
 plotly>=5.17.0
 pandas>=2.0.0
+openai>=1.0.0

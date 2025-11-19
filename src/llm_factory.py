@@ -1,41 +1,59 @@
 """Factory for creating LLM clients based on configuration."""
 import logging
-from typing import Any, Optional
+from typing import Any
 from .config import settings
 from .ollama_client import OllamaClient
+from .openai_client import OpenAIClient
 
 logger = logging.getLogger(__name__)
 
-def create_llm_client(provider: str) -> Any:
-    """Create LLM client based on provider setting.
+def create_llm_client(model_name: str) -> Any:
+    """Create LLM client based on model name.
     
     Args:
-        provider: LLM provider to use:
-                 - 'hermes4': Hermes 4 70B via Ollama
-                 - 'gpt-oss': GPT-OSS 20B via Ollama
+        model_name: Model name to use (must be in settings.available_models)
+                   Can also use aliases like 'hermes4-fast' or 'hermes4-ultrafast'
                  
     Returns:
-        OllamaClient instance configured for the specified model
+        OllamaClient or OpenAIClient instance configured for the specified model
+        
+    Raises:
+        ValueError: If model_name is not in available_models
     """
-
-    # Normalize provider name - accept both short and full names
-    provider_lower = provider.lower()
     
-    if 'hermes4' in provider_lower or 'hermes' in provider_lower:
-        # Use the full model name if provided, otherwise use default from settings
-        model = provider if ':' in provider else settings.hermes_model
-        logger.info(f"Using Ollama client for Hermes 4 - Model: {model}")
-        return OllamaClient(
-            model=model,
-            base_url=settings.ollama_base_url
-        )
-    elif 'gpt-oss' in provider_lower or 'gpt_oss' in provider_lower:
-        # Use the full model name if provided, otherwise use default from settings
-        model = provider if ':' in provider else settings.gpt_oss_model
-        logger.info(f"Using Ollama client for GPT-OSS - Model: {model}")
-        return OllamaClient(
-            model=model,
-            base_url=settings.ollama_base_url
+    # Aliases for convenience (Ollama models only)
+    model_aliases = {
+        "hermes4": settings.default_model if 'hermes4' in settings.default_model else "hermes4:70b-q4-m",
+        "hermes4-fast": "hermes4:70b-q4-s",
+        "hermes4-ultrafast": "hermes4:70b-iq4-xs",
+        "gpt-oss": "gpt-oss:20b",
+    }
+    
+    # Resolve alias if provided
+    model_lower = model_name.lower()
+    if model_lower in model_aliases:
+        model_name = model_aliases[model_lower]
+    
+    # Validate model is in available models
+    try:
+        validated_model = settings.validate_model(model_name)
+    except ValueError as e:
+        logger.error(str(e))
+        raise
+    
+    # Route to appropriate client based on model type
+    if settings.is_openai_model(validated_model):
+        logger.info(f"Using OpenAI client - Model: {validated_model}")
+        if settings.openai_enable_web_search:
+            logger.warning("OpenAI web_search tool enabled - Additional costs apply (~$10-50 per 1,000 searches)")
+        return OpenAIClient(
+            model=validated_model,
+            api_key=settings.openai_api_key,
+            enable_web_search=settings.openai_enable_web_search
         )
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}. Supported: hermes4, hermes4:70b, gpt-oss, gpt-oss:20b")
+        logger.info(f"Using Ollama client - Model: {validated_model}")
+        return OllamaClient(
+            model=validated_model,
+            base_url=settings.ollama_base_url
+        )

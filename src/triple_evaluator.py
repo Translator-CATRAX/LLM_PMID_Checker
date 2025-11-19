@@ -1,5 +1,6 @@
 """Main triple checking system orchestrating PMID extraction and Ollama LLM checking."""
 import logging
+import asyncio
 from typing import List, Dict, Any
 from .pmid_extractor import PMIDExtractor
 from .evaluation_agent import EvaluationAgent, TripleData, TripleEvaluation
@@ -41,8 +42,8 @@ class TripleEvaluationResult:
             # Main output line with key information in requested order: PMID → Supported → Category → Subject → Object → Supporting Sentence
             main_line = f"PMID:{eval_result.pmid}, {supported_text}, {category_display}, Subject:{subject_mentioned}, Object:{object_mentioned}"
             
-            # Add supporting sentence if available for supported categories
-            if eval_result.evidence_category == "direct_support" and eval_result.supporting_sentence:
+            # Add supporting sentence if available for supported categories and opposite assertions
+            if eval_result.evidence_category in ["direct_support", "opposite_assertion"] and eval_result.supporting_sentence:
                 main_line += f", [{eval_result.supporting_sentence}]"
             
             lines.append(main_line)
@@ -85,7 +86,7 @@ class TripleEvaluatorSystem:
         """Initialize the triple checking system.
         
         Args:
-            llm_provider: LLM provider to use ('hermes4', 'gpt-oss', or full model name like 'hermes4:70b').
+            llm_provider: LLM provider to use ('hermes4', 'gpt-oss', or full model name like 'hermes4:70b-q4-m').
             checker_model: Optional model for verification (e.g., 'gpt-oss:20b'). If None, disables verification.
         """
         self.pmid_extractor = PMIDExtractor(
@@ -201,33 +202,50 @@ class TripleEvaluatorSystem:
         
         # Step 3: Evaluate valid abstracts using LLM
         if valid_abstracts:
-            logger.info(f"Evaluating {len(valid_abstracts)} valid abstracts using LLM...")
+            logger.info(f"Evaluating {len(valid_abstracts)} valid abstracts using LLM with concurrent batch processing (max {settings.max_concurrent_requests} concurrent requests)...")
             
-            for pmid, title, abstract in valid_abstracts:
-                try:
-                    evaluation = await self.evaluation_agent.evaluate_triple_against_abstract(
-                        triple=triple,
-                        abstract=abstract,
-                        pmid=pmid,
-                        title=title,
-                        use_verification=self.use_verification
-                    )
-                    
-                    # Apply validation rules to ensure logical consistency
-                    evaluation = self._validate_evaluation_logic(evaluation, pmid)
-                    evaluations.append(evaluation)
-                    
-                except Exception as e:
-                    logger.error(f"Failed to evaluate PMID {pmid}: {e}")
-                    evaluations.append(TripleEvaluation(
-                        pmid=pmid,
-                        is_supported=False,
-                        evidence_category="not_supported",
-                        supporting_sentence=None,
-                        reasoning=f"Evaluation failed: {str(e)}",
-                        subject_mentioned=False,
-                        object_mentioned=False
-                    ))
+            # Create a semaphore to limit concurrent requests
+            semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
+            
+            async def evaluate_with_semaphore(pmid: str, title: str, abstract: str) -> TripleEvaluation:
+                """Evaluate a single PMID with semaphore-based rate limiting."""
+                async with semaphore:
+                    try:
+                        logger.debug(f"Starting evaluation for PMID {pmid}")
+                        evaluation = await self.evaluation_agent.evaluate_triple_against_abstract(
+                            triple=triple,
+                            abstract=abstract,
+                            pmid=pmid,
+                            title=title,
+                            use_verification=self.use_verification
+                        )
+                        
+                        # Apply validation rules to ensure logical consistency
+                        evaluation = self._validate_evaluation_logic(evaluation, pmid)
+                        logger.debug(f"Completed evaluation for PMID {pmid}")
+                        return evaluation
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to evaluate PMID {pmid}: {e}")
+                        return TripleEvaluation(
+                            pmid=pmid,
+                            is_supported=False,
+                            evidence_category="not_supported",
+                            supporting_sentence=None,
+                            reasoning=f"Evaluation failed: {str(e)}",
+                            subject_mentioned=False,
+                            object_mentioned=False
+                        )
+            
+            # Create tasks for all valid abstracts
+            tasks = [
+                evaluate_with_semaphore(pmid, title, abstract)
+                for pmid, title, abstract in valid_abstracts
+            ]
+            
+            # Execute all tasks concurrently with semaphore limiting
+            batch_evaluations = await asyncio.gather(*tasks)
+            evaluations.extend(batch_evaluations)
         
         # Sort evaluations by PMID to maintain order
         pmid_order = {pmid: idx for idx, pmid in enumerate(pmids)}
@@ -261,9 +279,8 @@ class TripleEvaluatorSystem:
             evaluation.reasoning += " [Auto-corrected: Only direct_support can be marked as supported]"
         
         # Rule 3: Categories that shouldn't have supporting sentences
-        # Only direct_support should have supporting sentences
-        if evaluation.evidence_category in ["not_supported", "opposite_assertion", 
-                                            "wrong_qualifier", "missing_qualifier"]:
+        # Only direct_support and opposite_assertion should have supporting sentences
+        if evaluation.evidence_category in ["not_supported", "wrong_qualifier", "missing_qualifier"]:
             if evaluation.supporting_sentence:
                 evaluation.supporting_sentence = None
                 evaluation.reasoning += " [Auto-corrected: This category doesn't require supporting sentence]"

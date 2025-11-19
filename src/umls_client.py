@@ -7,19 +7,21 @@ from typing import List, Dict
 class UMLSClient:
     """Client for interacting with the UMLS Terminology Services (UTS) API."""
 
-    def __init__(self, api_key: str = None, version: str = "current"):
+    def __init__(self, api_key: str = None, version: str = "current", timeout: int = 10):
         """
         Initialize UMLS client.
         
         Args:
             api_key: UMLS API key. If not provided, will load from UMLS_API_KEY env variable
             version: UMLS version (default: "current")
+            timeout: Request timeout in seconds (default: 10)
         """
         self.api_key = api_key or os.getenv("UMLS_API_KEY")
         if not self.api_key:
             raise ValueError("UMLS API key not provided and UMLS_API_KEY not found in environment")
         
         self.version = version
+        self.timeout = timeout
         self.base_url = "https://uts-ws.nlm.nih.gov"
         self.search_endpoint = f"{self.base_url}/rest/search/{self.version}"
         self.session = requests.Session()
@@ -61,7 +63,7 @@ class UMLSClient:
                 response = self.session.get(
                     self.search_endpoint,
                     params=query_params,
-                    timeout=30
+                    timeout=self.timeout
                 )
                 response.raise_for_status()
                 

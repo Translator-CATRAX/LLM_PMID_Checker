@@ -6,7 +6,7 @@ import logging
 import pandas as pd
 import plotly.express as px
 import requests
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 import json
 
@@ -18,6 +18,87 @@ from src.config import settings
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+MODEL_METADATA = {
+    # Ollama Models
+    "hermes4:70b-iq4-xs": {
+        "label": "Hermes 4 70B (IQ4_XS)",
+        "type": "ollama",
+        "details": [
+            "Fastest Hermes 4 quantization",
+            "Lowest VRAM usage (~28 GB)",
+            "Best when GPU memory is constrained"
+        ],
+    },
+    "hermes4:70b-q4-s": {
+        "label": "Hermes 4 70B (Q4_S)",
+        "type": "ollama",
+        "details": [
+            "Balanced speed and quality",
+            "Requires ~34 GB VRAM",
+            "Good trade-off for most workloads"
+        ],
+    },
+    "hermes4:70b-q4-m": {
+        "label": "Hermes 4 70B (Q4_M)",
+        "type": "ollama",
+        "details": [
+            "Highest quality Hermes 4 quantization",
+            "Requires ~42 GB VRAM",
+            "Best accuracy for critical reviews"
+        ],
+    },
+    "gpt-oss:20b": {
+        "label": "GPT-OSS 20B",
+        "type": "ollama",
+        "details": [
+            "20B parameter open-source mixture",
+            "~12 GB VRAM",
+            "Strong baseline and faster than Hermes 4"
+        ],
+    },
+    # OpenAI Models
+    "gpt-5-nano": {
+        "label": "GPT-5 Nano",
+        "type": "openai",
+        "details": [
+            "OpenAI's smallest GPT-5 model",
+            "Cloud-based (requires API key)",
+            "Fast and cost-effective"
+        ],
+    },
+    "gpt-5-mini": {
+        "label": "GPT-5 Mini",
+        "type": "openai",
+        "details": [
+            "OpenAI's mid-tier GPT-5 model",
+            "Cloud-based (requires API key)",
+            "Balanced performance and cost"
+        ],
+    },
+}
+
+
+def get_model_label(model_name: str) -> str:
+    """Return a user-friendly label for a model."""
+    return MODEL_METADATA.get(model_name, {}).get("label", model_name)
+
+
+def show_model_info(model_name: str):
+    """Render contextual information for the selected model."""
+    metadata = MODEL_METADATA.get(model_name)
+    if not metadata:
+        st.info(f"🧠 **{model_name}**")
+        return
+
+    details = metadata.get("details", [])
+    
+    # Add web search warning for OpenAI models if enabled
+    if metadata.get("type") == "openai" and settings.openai_enable_web_search:
+        details = details + ["⚠️ Web search enabled (+$10-50/1k searches)"]
+    
+    detail_text = "\n".join(f"- {line}" for line in details) if details else ""
+    st.info(f"🧠 **{metadata['label']}**\n{detail_text}")
 
 # Page configuration
 st.set_page_config(
@@ -45,10 +126,18 @@ def check_environment():
     except Exception as e:
         ollama_status = f"❌ Not accessible ({str(e)[:50]}...)"
     
+    # Check OpenAI API key
+    if not settings.openai_api_key:
+        warnings.append("OPENAI_API_KEY (required for OpenAI models)")
+        openai_status = "⚠️ Not configured"
+    else:
+        openai_status = "✅ API key set"
+    
     return {
         "missing_vars": missing_vars,
         "warnings": warnings,
-        "ollama_status": ollama_status
+        "ollama_status": ollama_status,
+        "openai_status": openai_status
     }
 
 def display_environment_status():
@@ -58,8 +147,17 @@ def display_environment_status():
     st.sidebar.header("🔧 Environment Status")
     
     # Ollama status
-    st.sidebar.write(f"**Ollama Server**: {status['ollama_status']}")
-    st.sidebar.write(f"**Base URL**: {settings.ollama_base_url}")
+    st.sidebar.write("**Ollama Models**")
+    st.sidebar.write(f"• Server: {status['ollama_status']}")
+    st.sidebar.write(f"• Base URL: {settings.ollama_base_url}")
+    
+    # OpenAI status
+    st.sidebar.write("**OpenAI Models**")
+    st.sidebar.write(f"• API: {status['openai_status']}")
+    if settings.openai_enable_web_search:
+        st.sidebar.warning("⚠️ Web search enabled (+$10-50/1k calls)")
+    
+    st.sidebar.divider()
     
     # Missing variables
     if status["missing_vars"]:
@@ -73,14 +171,20 @@ def display_environment_status():
             st.sidebar.warning(f"⚠️ {warning}")
     
 
-async def run_evaluation(triple_data: dict, pmids: List[str], model: str, checker_model: str = 'gpt-oss:20b', progress_callback=None) -> TripleEvaluationResult:
+async def run_evaluation(
+    triple_data: dict,
+    pmids: List[str],
+    model: str,
+    checker_model: Optional[str] = None,
+    progress_callback=None
+) -> TripleEvaluationResult:
     """Run the triple check asynchronously with progress tracking."""
     try:
         if progress_callback:
             progress_callback(10, "🔧 Initializing checking system...")
         
         # Use checker_model for verification (None means disable)
-        checker = checker_model if checker_model.lower() != 'none' else None
+        checker = checker_model if checker_model and checker_model.lower() != 'none' else None
         evaluator = TripleEvaluatorSystem(llm_provider=model, checker_model=checker)
         
         if progress_callback:
@@ -111,12 +215,13 @@ async def run_evaluation(triple_data: dict, pmids: List[str], model: str, checke
         
         evaluations = []
         
-        # Process each PMID with individual progress updates
-        for i, pmid in enumerate(pmids):
+        # Separate valid and invalid PMIDs
+        valid_pmids = []
+        for pmid in pmids:
             data = abstract_data.get(pmid)
             if not data:
                 # PMID not found in results
-                evaluations.append(                TripleEvaluation(
+                evaluations.append(TripleEvaluation(
                     pmid=pmid,
                     is_supported=False,
                     evidence_category="not_supported",
@@ -129,7 +234,7 @@ async def run_evaluation(triple_data: dict, pmids: List[str], model: str, checke
                 
             if data.error:
                 # Error extracting abstract
-                evaluations.append(                TripleEvaluation(
+                evaluations.append(TripleEvaluation(
                     pmid=pmid,
                     is_supported=False,
                     evidence_category="not_supported",
@@ -142,7 +247,7 @@ async def run_evaluation(triple_data: dict, pmids: List[str], model: str, checke
             
             if not data.abstract.strip():
                 # No abstract available
-                evaluations.append(                TripleEvaluation(
+                evaluations.append(TripleEvaluation(
                     pmid=pmid,
                     is_supported=False,
                     evidence_category="not_supported",
@@ -153,33 +258,56 @@ async def run_evaluation(triple_data: dict, pmids: List[str], model: str, checke
                 ))
                 continue
             
-            # Evaluate valid PMID with progress update
+            # Add to valid PMIDs list
+            valid_pmids.append((pmid, data.title, data.abstract))
+        
+        # Process valid PMIDs with concurrent batch processing
+        if valid_pmids:
             if progress_callback:
-                current_progress = 40 + int((i / len(pmids)) * 50)
-                progress_callback(current_progress, f"🔬 Evaluating PMID {pmid} ({i+1}/{len(pmids)})...")
+                progress_callback(40, f"🔬 Starting batch evaluation of {len(valid_pmids)} PMIDs...")
             
-            try:
-                evaluation = await evaluator.evaluation_agent.evaluate_triple_against_abstract(
-                    triple=triple_obj,
-                    abstract=data.abstract,
-                    pmid=pmid,
-                    title=data.title
-                )
-                
-                # Apply validation rules
-                evaluation = evaluator._validate_evaluation_logic(evaluation, pmid)
-                evaluations.append(evaluation)
-                
-            except Exception as e:
-                evaluations.append(                TripleEvaluation(
-                    pmid=pmid,
-                    is_supported=False,
-                    evidence_category="not_supported",
-                    supporting_sentence=None,
-                    reasoning=f"Evaluation failed: {str(e)}",
-                    subject_mentioned=False,
-                    object_mentioned=False
-                ))
+            # Create a semaphore to limit concurrent requests
+            semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
+            
+            async def evaluate_with_progress(idx: int, pmid: str, title: str, abstract: str) -> TripleEvaluation:
+                """Evaluate a single PMID with progress tracking."""
+                async with semaphore:
+                    try:
+                        if progress_callback:
+                            current_progress = 40 + int((idx / len(valid_pmids)) * 50)
+                            progress_callback(current_progress, f"🔬 Evaluating PMID {pmid} ({idx+1}/{len(valid_pmids)})...")
+                        
+                        evaluation = await evaluator.evaluation_agent.evaluate_triple_against_abstract(
+                            triple=triple_obj,
+                            abstract=abstract,
+                            pmid=pmid,
+                            title=title
+                        )
+                        
+                        # Apply validation rules
+                        evaluation = evaluator._validate_evaluation_logic(evaluation, pmid)
+                        return evaluation
+                        
+                    except Exception as e:
+                        return TripleEvaluation(
+                            pmid=pmid,
+                            is_supported=False,
+                            evidence_category="not_supported",
+                            supporting_sentence=None,
+                            reasoning=f"Evaluation failed: {str(e)}",
+                            subject_mentioned=False,
+                            object_mentioned=False
+                        )
+            
+            # Create tasks for all valid PMIDs
+            tasks = [
+                evaluate_with_progress(i, pmid, title, abstract)
+                for i, (pmid, title, abstract) in enumerate(valid_pmids)
+            ]
+            
+            # Execute all tasks concurrently
+            batch_evaluations = await asyncio.gather(*tasks)
+            evaluations.extend(batch_evaluations)
         
         if progress_callback:
             progress_callback(90, "📊 Finalizing results...")
@@ -493,28 +621,62 @@ def main_container():
     # Model selection
     st.header("🤖 AI Model Selection")
     
+    # Get available models grouped by type
+    ollama_models = settings.available_ollama_models
+    openai_models = settings.available_openai_models
+    available_models = settings.available_models
+
+    if not available_models:
+        st.error("No models configured. Set AVAILABLE_OLLAMA_MODELS and/or AVAILABLE_OPENAI_MODELS in .env or check your configuration.")
+        st.stop()
+
+    # Group models by type for display
+    model_groups = []
+    if ollama_models:
+        model_groups.append(("🖥️ Ollama Models (Local)", ollama_models))
+    if openai_models:
+        model_groups.append(("☁️ OpenAI Models (Cloud)", openai_models))
+    
+    default_validation_model = settings.default_model
+    # For checker, default to a different model if possible, otherwise use the same
+    default_checker_model = available_models[1] if len(available_models) > 1 else available_models[0]
+
     col1, col2 = st.columns(2)
+
     with col1:
         st.subheader("Validation Model")
-        model_display = st.selectbox(
-            "Select Model",
-            options=["Hermes 4", "GPT-OSS"],
-            index=0,
+        
+        # Create grouped options with separators
+        validation_options = []
+        for group_name, group_models in model_groups:
+            validation_options.append(f"--- {group_name} ---")
+            validation_options.extend(group_models)
+        
+        # Find the index of the default model in the flattened list
+        validation_index = 0
+        for i, opt in enumerate(validation_options):
+            if opt == default_validation_model:
+                validation_index = i
+                break
+        
+        model = st.selectbox(
+            "Select validation model",
+            options=validation_options,
+            index=validation_index,
+            format_func=lambda x: get_model_label(x) if not x.startswith("---") else x,
             help="Choose the language model for triple validation",
+            key="validation_model_select",
             label_visibility="collapsed"
         )
         
-        # Map display name to actual model name
-        model = "hermes4:70b" if model_display == "Hermes 4" else "gpt-oss:20b"
+        # Skip if user selected a separator
+        while model.startswith("---"):
+            st.warning("Please select an actual model, not a separator")
+            model = available_models[0]
         
-        # Model information
-        if model == "hermes4:70b":
-            st.info("🧠 **Hermes 4 70B (Q4_K_XL)**\n- ~42GB VRAM required\n- Hybrid reasoning mode\n- Best accuracy")
-        else:
-            st.info("🧠 **GPT-OSS 20B**\n- ~12GB VRAM required\n- Good accuracy\n- Faster than Hermes 4")
+        show_model_info(model)
     
     with col2:
-        # Put checkbox and title on the same row
         ver_col1, ver_col2 = st.columns([3, 1])
         with ver_col1:
             st.subheader("Verification Model")
@@ -527,22 +689,35 @@ def main_container():
         
         checker_model = None
         if enable_verification:
-            checker_display = st.selectbox(
-                "Select Checker Model",
-                options=["GPT-OSS", "Hermes 4"],
-                index=0,
+            # Create grouped options for checker
+            checker_options = []
+            for group_name, group_models in model_groups:
+                checker_options.append(f"--- {group_name} ---")
+                checker_options.extend(group_models)
+            
+            # Find the index of the default checker model
+            checker_index = 0
+            for i, opt in enumerate(checker_options):
+                if opt == default_checker_model:
+                    checker_index = i
+                    break
+            
+            checker_model = st.selectbox(
+                "Select checker model",
+                options=checker_options,
+                index=checker_index,
+                format_func=lambda x: get_model_label(x) if not x.startswith("---") else x,
                 help="Model used to verify validation results",
+                key="checker_model_select",
                 label_visibility="collapsed"
             )
             
-            # Map display name to actual model name
-            checker_model = "hermes4:70b" if checker_display == "Hermes 4" else "gpt-oss:20b"
+            # Skip if user selected a separator
+            while checker_model.startswith("---"):
+                st.warning("Please select an actual model, not a separator")
+                checker_model = available_models[0]
             
-            # Checker model information
-            if checker_model == "hermes4:70b":
-                st.info("✓ **Hermes 4 Verification**\n- Double-checks entity names\n- Catches missed synonyms\n- Highest accuracy")
-            else:
-                st.info("✓ **GPT-OSS Verification**\n- Double-checks entity names\n- Catches missed synonyms\n- Faster verification")
+            show_model_info(checker_model)
         else:
             st.warning("⚠️ **No Verification Enabled**\n\n"
                       "Without verification:\n\n"

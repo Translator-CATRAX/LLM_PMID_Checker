@@ -43,14 +43,16 @@ class HGNCClient:
         "Approved",
     ]
     
-    def __init__(self, rate_limit_delay: float = 0.1):
+    def __init__(self, rate_limit_delay: float = 0.1, timeout: int = 10):
         """
         Initialize HGNC client.
         
         Args:
             rate_limit_delay: Delay between requests in seconds (default: 0.1s = 10 req/s)
+            timeout: Request timeout in seconds (default: 10)
         """
         self.rate_limit_delay = rate_limit_delay
+        self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({'Accept': 'application/json'})
         self._last_request_time = 0
@@ -76,7 +78,7 @@ class HGNCClient:
         self._rate_limit()
         
         try:
-            response = self.session.get(f"{self.BASE_URL}{endpoint}", timeout=10)
+            response = self.session.get(f"{self.BASE_URL}{endpoint}", timeout=self.timeout)
             
             if response.status_code == 200:
                 return response.json()
