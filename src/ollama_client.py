@@ -108,20 +108,42 @@ class OllamaClient:
         if category_match:
             result["evidence_category"] = category_match.group(1)
         
-        
-        # Extract supporting_sentence (handle quotes carefully)
-        sentence_match = re.search(r'"supporting_sentence":\s*"([^"]*(?:\\.[^"]*)*)"', content)
+        # Extract supporting_sentence - improved to handle embedded quotes
+        # Look for the field, then extract until the next field or end of object
+        sentence_match = re.search(
+            r'"supporting_sentence":\s*"((?:[^"\\]|\\.)*)"\s*[,}]', 
+            content, 
+            re.DOTALL
+        )
         if sentence_match:
-            # Unescape any escaped quotes
-            sentence = sentence_match.group(1).replace('\\"', '"')
+            sentence = sentence_match.group(1).replace('\\"', '"').replace('\\n', '\n')
             result["supporting_sentence"] = sentence if sentence.strip() else None
+        else:
+            # Fallback: try to get anything between quotes after supporting_sentence
+            sentence_match2 = re.search(
+                r'"supporting_sentence":\s*"([^"]*)"', 
+                content
+            )
+            if sentence_match2:
+                result["supporting_sentence"] = sentence_match2.group(1) if sentence_match2.group(1).strip() else None
         
-        # Extract reasoning (handle quotes carefully)
-        reasoning_match = re.search(r'"reasoning":\s*"([^"]*(?:\\.[^"]*)*)"', content)
+        # Extract reasoning - improved to handle embedded quotes  
+        reasoning_match = re.search(
+            r'"reasoning":\s*"((?:[^"\\]|\\.)*)"\s*[,}]', 
+            content,
+            re.DOTALL
+        )
         if reasoning_match:
-            # Unescape any escaped quotes
-            reasoning = reasoning_match.group(1).replace('\\"', '"')
+            reasoning = reasoning_match.group(1).replace('\\"', '"').replace('\\n', '\n')
             result["reasoning"] = reasoning if reasoning.strip() else "Manual extraction"
+        else:
+            # Fallback: try to get anything between quotes after reasoning
+            reasoning_match2 = re.search(
+                r'"reasoning":\s*"([^"]*)"',
+                content
+            )
+            if reasoning_match2:
+                result["reasoning"] = reasoning_match2.group(1) if reasoning_match2.group(1).strip() else "Manual extraction"
         
         # Extract subject_mentioned
         subject_mentioned_match = re.search(r'"subject_mentioned":\s*(true|false)', content, re.IGNORECASE)
@@ -133,6 +155,7 @@ class OllamaClient:
         if object_mentioned_match:
             result["object_mentioned"] = object_mentioned_match.group(1).lower() == 'true'
         
+        logger.debug(f"Manual extraction completed successfully")
         return result
 
     async def generate_response(self, prompt: str) -> Dict[str, Any]:
@@ -431,20 +454,44 @@ class OllamaClient:
                     evaluation = json.loads(json_str)
                 except json.JSONDecodeError as parse_error:
                     # Try to fix common quote issues in JSON strings
-                    logger.warning(f"Initial JSON parse failed, attempting to fix quotes: {parse_error}")
+                    logger.debug(f"Initial JSON parse failed, attempting to fix quotes: {parse_error}")
                     
-                    # More aggressive quote fixing for string values
                     import re
-                    # Fix unescaped quotes within string values
-                    json_str = re.sub(r'("supporting_sentence":\s*")([^"]*)"([^"]*)"([^"]*")', r'\1\2\\\"\3\\\"\4', json_str)
-                    json_str = re.sub(r'("reasoning":\s*")([^"]*)"([^"]*)"([^"]*")', r'\1\2\\\"\3\\\"\4', json_str)
+                    
+                    # Strategy 1: Fix unescaped quotes in string fields more comprehensively
+                    # Match the field name, opening quote, content (may have quotes), closing quote
+                    def fix_field_quotes(field_name, text):
+                        """Fix quotes within a specific JSON field."""
+                        # Pattern: "field_name": "...content with possible "quotes"..."
+                        pattern = rf'("{field_name}":\s*")([^"]*(?:"[^"]*)*")(\s*[,}}])'
+                        
+                        def replace_fn(match):
+                            field_start = match.group(1)  # "field_name": "
+                            content = match.group(2)      # content with quotes
+                            field_end = match.group(3)    # , or }
+                            
+                            # Escape all internal quotes in content
+                            # Content ends with ", so we need to handle it carefully
+                            if content.endswith('"'):
+                                actual_content = content[:-1]  # Remove trailing "
+                                escaped_content = actual_content.replace('"', '\\"')
+                                return field_start + escaped_content + '"' + field_end
+                            else:
+                                escaped_content = content.replace('"', '\\"')
+                                return field_start + escaped_content + field_end
+                        
+                        return re.sub(pattern, replace_fn, text, flags=re.DOTALL)
+                    
+                    # Fix quotes in supporting_sentence and reasoning fields
+                    json_str = fix_field_quotes('supporting_sentence', json_str)
+                    json_str = fix_field_quotes('reasoning', json_str)
                     
                     try:
                         evaluation = json.loads(json_str)
-                        logger.info("Successfully parsed JSON after quote fixing")
-                    except json.JSONDecodeError:
-                        # Final fallback: try to extract values manually
-                        logger.warning("JSON parsing failed completely, attempting manual extraction")
+                        logger.debug("Successfully parsed JSON after quote fixing")
+                    except json.JSONDecodeError as e2:
+                        # Strategy 2: More aggressive - extract field by field
+                        logger.debug(f"Advanced quote fixing failed: {e2}, using manual extraction")
                         evaluation = self._extract_json_manually(content)
             else:
                 raise ValueError("Empty JSON content extracted.")

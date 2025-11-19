@@ -276,27 +276,27 @@ async def run_evaluation(
                         if progress_callback:
                             current_progress = 40 + int((idx / len(valid_pmids)) * 50)
                             progress_callback(current_progress, f"🔬 Evaluating PMID {pmid} ({idx+1}/{len(valid_pmids)})...")
-                        
-                        evaluation = await evaluator.evaluation_agent.evaluate_triple_against_abstract(
-                            triple=triple_obj,
+            
+                evaluation = await evaluator.evaluation_agent.evaluate_triple_against_abstract(
+                    triple=triple_obj,
                             abstract=abstract,
-                            pmid=pmid,
+                    pmid=pmid,
                             title=title
-                        )
-                        
-                        # Apply validation rules
-                        evaluation = evaluator._validate_evaluation_logic(evaluation, pmid)
+                )
+                
+                # Apply validation rules
+                evaluation = evaluator._validate_evaluation_logic(evaluation, pmid)
                         return evaluation
-                        
-                    except Exception as e:
+                
+            except Exception as e:
                         return TripleEvaluation(
-                            pmid=pmid,
-                            is_supported=False,
-                            evidence_category="not_supported",
-                            supporting_sentence=None,
-                            reasoning=f"Evaluation failed: {str(e)}",
-                            subject_mentioned=False,
-                            object_mentioned=False
+                    pmid=pmid,
+                    is_supported=False,
+                    evidence_category="not_supported",
+                    supporting_sentence=None,
+                    reasoning=f"Evaluation failed: {str(e)}",
+                    subject_mentioned=False,
+                    object_mentioned=False
                         )
             
             # Create tasks for all valid PMIDs

@@ -28,7 +28,9 @@ async def evaluate_single_row(evaluator, row, row_idx, total_rows):
         pmid = str(row['PMID'])
         subject_curie = row['subject_curie']
         object_curie = row['object_curie']
-        ground_truth = row['ground_truth']
+        
+        # Get ground truth (column should be renamed by this point)
+        ground_truth = row.get('ground_truth', None)
         
         # Map predicate to qualified parameters
         predicate_mapping = {
@@ -152,6 +154,11 @@ async def evaluate_batch(input_file, output_file, val_model, checker_model=None,
     # Read input TSV
     print(f"Reading input file: {input_file}")
     df = pd.read_csv(input_file, sep='\t')
+    
+    # Rename 'Supported' to 'ground_truth' for consistency if it exists
+    if 'Supported' in df.columns and 'ground_truth' not in df.columns:
+        df = df.rename(columns={'Supported': 'ground_truth'})
+        print("Note: Renamed 'Supported' column to 'ground_truth' for consistency")
     
     # Filter out rows with empty CURIEs or PMIDs
     df = df.dropna(subset=['subject_curie', 'object_curie', 'PMID', 'predicate'])

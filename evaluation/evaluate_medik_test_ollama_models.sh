@@ -14,7 +14,7 @@ OUTPUT_FILE="$BASE_DIR/evaluation/hermes4_70b_iq4_xs_evaluation_results_v2.tsv"
 METRICS_FILE="$BASE_DIR/evaluation/hermes4_70b_iq4_xs_evaluation_metrics_v2.txt"
 VAL_MODEL="hermes4:70b-iq4-xs"
 CHECKER_MODEL=""  # Optional: Set to enable verification
-MAX_CONCURRENT=5  # Number of concurrent evaluations (adjust based on your system)
+MAX_CONCURRENT=5
 
 echo "========================================"
 echo "Running TEST evaluation with Ollama models"

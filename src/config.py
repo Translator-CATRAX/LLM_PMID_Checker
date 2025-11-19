@@ -54,7 +54,7 @@ class Settings(BaseModel):
     # Request settings
     max_retries: int = 3
     request_timeout: int = 180
-    
+
     # Batch processing settings
     max_concurrent_requests: int = int(os.getenv("MAX_CONCURRENT_REQUESTS", "5"))
     
