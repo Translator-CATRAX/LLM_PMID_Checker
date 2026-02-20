@@ -33,7 +33,11 @@ class OpenAIClient:
         self.model = model
         self.api_key = api_key or settings.openai_api_key
         self.enable_web_search = enable_web_search
-        self.reasoning_effort = reasoning_effort
+        
+        if "gpt-5.1" in model:
+            self.reasoning_effort = "medium"
+        else:
+            self.reasoning_effort = reasoning_effort
         
         if not self.api_key:
             raise ValueError("OpenAI API key is required. Please set OPENAI_API_KEY in your .env file.")

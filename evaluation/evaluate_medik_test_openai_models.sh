@@ -9,13 +9,13 @@
 
 # Set base directory
 BASE_DIR="/home/grads/cqm5886/work/llm_pmid_support"
-INPUT_FILE="$BASE_DIR/evaluation/test_data.tsv"
-OUTPUT_FILE="$BASE_DIR/evaluation/gpt_5_nano_evaluation_results_v2.tsv"
-METRICS_FILE="$BASE_DIR/evaluation/gpt_5_nano_evaluation_metrics_v2.txt"
-TIMING_FILE="$BASE_DIR/evaluation/gpt_5_nano_timing_results_v2.txt"
-TOKENS_FILE="$BASE_DIR/evaluation/gpt_5_nano_token_usage_v2.txt"
-VAL_MODEL="gpt-5-nano"
-CHECKER_MODEL=""
+INPUT_FILE="$BASE_DIR/datava/test_data.tsv"
+OUTPUT_FILE="$BASE_DIR/evaluation/gpt_5_1_chat_latest_evaluation_results.tsv"
+METRICS_FILE="$BASE_DIR/evaluation/gpt_5_1_chat_latest_evaluation_metrics.txt"
+TIMING_FILE="$BASE_DIR/evaluation/gpt_5_1_chat_latest_timing_results.txt"
+TOKENS_FILE="$BASE_DIR/evaluation/gpt_5_1_chat_latest_token_usage.txt"
+VAL_MODEL="gpt-5.1-chat-latest"
+CHECKER_MODEL="gpt-5.1-chat-latest"
 
 echo "========================================"
 echo "Running TEST evaluation with OpenAI models"
@@ -145,12 +145,15 @@ tail -n +2 "$INPUT_FILE" | while IFS=$'\t' read -r subject predicate object pmid
         echo "    ERROR: main.py failed with exit code $exit_code"
         echo "    Runtime: ${runtime}s"
         # Write error row
-        echo -e "$subject\t$predicate\t$object\t$supported\t$pmid\tError\tError\tNo\tNo\t\t\t$subject_curie\t$object_curie\t$runtime\t0\t0\t0\t0" >> "$OUTPUT_FILE"
-        echo -e "$pmid\t$runtime" >> "$TIMING_FILE"
-        echo -e "$pmid\t0\t0\t0\t0\t0" >> "$TOKENS_FILE"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$subject" "$predicate" "$object" "$supported" "$pmid" \
+            "Error" "Error" "No" "No" "" "" \
+            "$subject_curie" "$object_curie" "$runtime" "0" "0" "0" "0" >> "$OUTPUT_FILE"
+        printf '%s\t%s\n' "$pmid" "$runtime" >> "$TIMING_FILE"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$pmid" "0" "0" "0" "0" "0" >> "$TOKENS_FILE"
     else
-        # Parse LLM output using Python parser
-        parsed_json=$(python "$BASE_DIR/evaluation/parse_llm_output.py" "$output")
+        # Parse LLM output using Python parser (pipe via stdin to avoid shell escaping issues)
+        parsed_json=$(echo "$output" | python "$BASE_DIR/evaluation/parse_llm_output.py" -)
         
         # Extract fields from JSON
         is_supported=$(echo "$parsed_json" | python -c "import sys, json; print(json.load(sys.stdin)['is_supported'])" 2>/dev/null || echo "Unknown")
@@ -159,6 +162,10 @@ tail -n +2 "$INPUT_FILE" | while IFS=$'\t' read -r subject predicate object pmid
         object_mentioned=$(echo "$parsed_json" | python -c "import sys, json; print('Yes' if json.load(sys.stdin)['object_mentioned'] else 'No')" 2>/dev/null || echo "No")
         supporting_sentence=$(echo "$parsed_json" | python -c "import sys, json; print(json.load(sys.stdin)['supporting_sentence'])" 2>/dev/null || echo "")
         reasoning=$(echo "$parsed_json" | python -c "import sys, json; print(json.load(sys.stdin)['reasoning'])" 2>/dev/null || echo "")
+        
+        # Sanitize text fields: strip any remaining newlines and tabs
+        supporting_sentence=$(echo "$supporting_sentence" | tr '\n\t' '  ')
+        reasoning=$(echo "$reasoning" | tr '\n\t' '  ')
         
         # Convert Python bool to string
         if [ "$is_supported" == "True" ]; then
@@ -176,10 +183,15 @@ tail -n +2 "$INPUT_FILE" | while IFS=$'\t' read -r subject predicate object pmid
         echo "    Tokens: ${prompt_tokens} input (${cached_tokens} cached), ${completion_tokens} output, ${total_tokens} total"
         echo ""
         
-        # Append detailed results to output file
-        echo -e "$subject\t$predicate\t$object\t$supported\t$pmid\t$predicted\t$evidence_category\t$subject_mentioned\t$object_mentioned\t$supporting_sentence\t$reasoning\t$subject_curie\t$object_curie\t$runtime\t$prompt_tokens\t$completion_tokens\t$total_tokens\t$cached_tokens" >> "$OUTPUT_FILE"
-        echo -e "$pmid\t$runtime" >> "$TIMING_FILE"
-        echo -e "$pmid\t$prompt_tokens\t$completion_tokens\t$total_tokens\t$cached_tokens\t$prompt_tokens_uncached" >> "$TOKENS_FILE"
+        # Append detailed results to output file (use printf to avoid echo -e interpreting escape sequences)
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$subject" "$predicate" "$object" "$supported" "$pmid" \
+            "$predicted" "$evidence_category" "$subject_mentioned" "$object_mentioned" \
+            "$supporting_sentence" "$reasoning" \
+            "$subject_curie" "$object_curie" "$runtime" \
+            "$prompt_tokens" "$completion_tokens" "$total_tokens" "$cached_tokens" >> "$OUTPUT_FILE"
+        printf '%s\t%s\n' "$pmid" "$runtime" >> "$TIMING_FILE"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$pmid" "$prompt_tokens" "$completion_tokens" "$total_tokens" "$cached_tokens" "$prompt_tokens_uncached" >> "$TOKENS_FILE"
     fi
     
     # Small delay to avoid rate limiting

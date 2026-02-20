@@ -92,10 +92,13 @@ def format_tsv_line(subject, predicate, object_name, ground_truth, pmid, result_
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python parse_llm_output.py <output_text>")
+        print("Usage: python parse_llm_output.py <output_text | ->")
         sys.exit(1)
     
-    output_text = sys.argv[1]
+    if sys.argv[1] == '-':
+        output_text = sys.stdin.read()
+    else:
+        output_text = sys.argv[1]
     result = parse_llm_output(output_text)
     
     # Print as JSON for easy parsing in bash
