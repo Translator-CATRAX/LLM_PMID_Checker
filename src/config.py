@@ -19,11 +19,18 @@ DEFAULT_OPENAI_MODELS = [
     "gpt-5"
 ]
 
+DEFAULT_VLLM_MODELS = [
+    "hermes4-vllm",
+]
+
 class Settings(BaseModel):
     """Application settings."""
     
     # Ollama configuration
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    
+    # vLLM configuration
+    vllm_base_url: str = os.getenv("VLLM_BASE_URL", "http://localhost:8000")
     
     # Available Ollama models (comma-separated list from .env)
     available_ollama_models: List[str] = Field(default_factory=list)
@@ -36,6 +43,9 @@ class Settings(BaseModel):
     
     # Available OpenAI models (comma-separated list from .env)
     available_openai_models: List[str] = Field(default_factory=list)
+    
+    # Available vLLM models (comma-separated list from .env)
+    available_vllm_models: List[str] = Field(default_factory=list)
     
     # Combined list of all available models
     available_models: List[str] = Field(default_factory=list)
@@ -86,8 +96,21 @@ class Settings(BaseModel):
             else:
                 self.available_openai_models = list(DEFAULT_OPENAI_MODELS)
         
-        # Combine Ollama and OpenAI models into available_models
-        self.available_models = self.available_ollama_models + self.available_openai_models
+        # Load available vLLM models from environment
+        vllm_models_env = os.getenv("AVAILABLE_VLLM_MODELS")
+        if not self.available_vllm_models:
+            if vllm_models_env:
+                parsed_models = [model.strip() for model in vllm_models_env.split(",") if model.strip()]
+                self.available_vllm_models = parsed_models if parsed_models else list(DEFAULT_VLLM_MODELS)
+            else:
+                self.available_vllm_models = list(DEFAULT_VLLM_MODELS)
+        
+        # Combine all model lists into available_models
+        self.available_models = (
+            self.available_ollama_models + 
+            self.available_openai_models + 
+            self.available_vllm_models
+        )
         
         # Set default model to first available model
         self.default_model = self.available_models[0] if self.available_models else ""
@@ -114,6 +137,17 @@ class Settings(BaseModel):
         """
         return model in self.available_ollama_models
     
+    def is_vllm_model(self, model: str) -> bool:
+        """Check if a model is a vLLM model.
+        
+        Args:
+            model: Model name to check
+            
+        Returns:
+            True if model is a vLLM model, False otherwise
+        """
+        return model in self.available_vllm_models
+    
     def validate_model(self, model: str) -> str:
         """Validate that a model name is in the available models list.
         
@@ -134,7 +168,8 @@ class Settings(BaseModel):
                 f"Model '{model}' is not available. "
                 f"Available Ollama models: {', '.join(self.available_ollama_models)}. "
                 f"Available OpenAI models: {', '.join(self.available_openai_models)}. "
-                f"Please check your AVAILABLE_OLLAMA_MODELS and AVAILABLE_OPENAI_MODELS environment variables in .env or update your model selection."
+                f"Available vLLM models: {', '.join(self.available_vllm_models)}. "
+                f"Please check your AVAILABLE_OLLAMA_MODELS, AVAILABLE_OPENAI_MODELS, and AVAILABLE_VLLM_MODELS environment variables in .env or update your model selection."
             )
         
         return model

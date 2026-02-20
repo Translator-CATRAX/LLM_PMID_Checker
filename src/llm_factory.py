@@ -4,6 +4,7 @@ from typing import Any
 from .config import settings
 from .ollama_client import OllamaClient
 from .openai_client import OpenAIClient
+from .vllm_client import VLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,12 @@ def create_llm_client(model_name: str) -> Any:
             model=validated_model,
             api_key=settings.openai_api_key,
             enable_web_search=settings.openai_enable_web_search
+        )
+    elif settings.is_vllm_model(validated_model):
+        logger.info(f"Using vLLM client - Model: {validated_model}")
+        return VLLMClient(
+            model=validated_model,
+            base_url=settings.vllm_base_url
         )
     else:
         logger.info(f"Using Ollama client - Model: {validated_model}")
