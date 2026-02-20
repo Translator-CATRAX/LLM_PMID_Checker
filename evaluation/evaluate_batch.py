@@ -5,8 +5,10 @@ This script processes multiple rows concurrently for faster evaluation.
 """
 import asyncio
 import pandas as pd
+import numpy as np
 import time
 import argparse
+import json
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -140,6 +142,132 @@ async def evaluate_single_row(evaluator, row, row_idx, total_rows):
         }
 
 
+def save_timing_log(results_df, output_file, total_runtime, total_rows, concurrency, model_name):
+    """Save a comprehensive timing log alongside the results file.
+    
+    Generates two files:
+      - *_timing_results.txt : TSV with per-row PMID + runtime_seconds (compatible
+        with the existing calculate_timing_stats.py)
+      - *_timing_summary.txt : Human-readable summary with concurrency, wall-clock
+        time, effective throughput, and per-request statistics.
+    
+    Args:
+        results_df: DataFrame containing evaluation results with runtime_seconds.
+        output_file: Path to the main results TSV (used to derive timing file paths).
+        total_runtime: Wall-clock time for the entire batch (seconds).
+        total_rows: Number of rows evaluated.
+        concurrency: Max concurrent requests used during evaluation.
+        model_name: Model name used for evaluation.
+    """
+    output_path = Path(output_file)
+    base_name = output_path.stem.replace("_evaluation_results", "").replace("_results", "")
+    eval_dir = output_path.parent
+
+    # ---- 1. Per-row timing TSV (backward-compatible with calculate_timing_stats.py) ----
+    timing_tsv_path = eval_dir / f"{base_name}_timing_results.txt"
+    if 'runtime_seconds' in results_df.columns:
+        timing_df = results_df[['PMID', 'runtime_seconds']].copy()
+        timing_df.to_csv(timing_tsv_path, sep='\t', index=False)
+        print(f"Per-row timing saved to: {timing_tsv_path}")
+
+    # ---- 2. Human-readable timing summary ----
+    timing_summary_path = eval_dir / f"{base_name}_timing_summary.txt"
+
+    runtimes = results_df['runtime_seconds'].values if 'runtime_seconds' in results_df.columns else np.array([])
+    
+    if len(runtimes) > 0:
+        mean_request = np.mean(runtimes)
+        std_request = np.std(runtimes, ddof=1) if len(runtimes) > 1 else 0.0
+        median_request = np.median(runtimes)
+        min_request = np.min(runtimes)
+        max_request = np.max(runtimes)
+        sum_request = np.sum(runtimes)
+        p25_request = np.percentile(runtimes, 25)
+        p75_request = np.percentile(runtimes, 75)
+        p95_request = np.percentile(runtimes, 95)
+    else:
+        mean_request = std_request = median_request = 0.0
+        min_request = max_request = sum_request = 0.0
+        p25_request = p75_request = p95_request = 0.0
+
+    wall_clock_per_row = total_runtime / total_rows if total_rows > 0 else 0.0
+    effective_throughput = total_rows / total_runtime if total_runtime > 0 else 0.0
+
+    summary_lines = [
+        "=" * 60,
+        "  Timing Summary",
+        "=" * 60,
+        "",
+        f"Timestamp:       {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Model:           {model_name}",
+        f"Total rows:      {total_rows}",
+        f"Concurrency:     {concurrency}",
+        "",
+        "--- Wall-Clock Performance ---",
+        f"Total wall-clock time:       {total_runtime:>10.2f} s  ({total_runtime/60:.2f} min)",
+        f"Avg wall-clock time per row:  {wall_clock_per_row:>10.2f} s",
+        f"Effective throughput:          {effective_throughput:>10.2f} rows/s",
+        "",
+        "--- Per-Request (Individual) Timing ---",
+        f"Sum of all request times:    {sum_request:>10.2f} s  ({sum_request/60:.2f} min)",
+        f"Mean:                        {mean_request:>10.2f} s",
+        f"Std Dev:                     {std_request:>10.2f} s",
+        f"Median:                      {median_request:>10.2f} s",
+        f"Min:                         {min_request:>10.2f} s",
+        f"Max:                         {max_request:>10.2f} s",
+        f"25th percentile:             {p25_request:>10.2f} s",
+        f"75th percentile:             {p75_request:>10.2f} s",
+        f"95th percentile:             {p95_request:>10.2f} s",
+        "",
+        "--- Estimated Effective Per-Row Throughput ---",
+        f"Approx mean (request_mean / concurrency):  {mean_request / concurrency:.2f} s"
+            if concurrency > 0 else "Approx mean: N/A (concurrency=0)",
+        f"Approx std  (request_std  / concurrency):  {std_request  / concurrency:.2f} s"
+            if concurrency > 0 else "Approx std:  N/A (concurrency=0)",
+        "",
+        "=" * 60,
+    ]
+
+    summary_text = "\n".join(summary_lines) + "\n"
+
+    with open(timing_summary_path, 'w') as f:
+        f.write(summary_text)
+
+    # Also save as JSON for programmatic use
+    timing_json_path = eval_dir / f"{base_name}_timing_summary.json"
+    timing_data = {
+        "timestamp": datetime.now().isoformat(),
+        "model": model_name,
+        "total_rows": total_rows,
+        "concurrency": concurrency,
+        "wall_clock": {
+            "total_seconds": round(total_runtime, 4),
+            "avg_per_row_seconds": round(wall_clock_per_row, 4),
+            "effective_throughput_rows_per_sec": round(effective_throughput, 4),
+        },
+        "per_request": {
+            "sum_seconds": round(float(sum_request), 4),
+            "mean_seconds": round(float(mean_request), 4),
+            "std_seconds": round(float(std_request), 4),
+            "median_seconds": round(float(median_request), 4),
+            "min_seconds": round(float(min_request), 4),
+            "max_seconds": round(float(max_request), 4),
+            "p25_seconds": round(float(p25_request), 4),
+            "p75_seconds": round(float(p75_request), 4),
+            "p95_seconds": round(float(p95_request), 4),
+        },
+        "effective_throughput_estimate": {
+            "approx_mean_per_row_seconds": round(mean_request / concurrency, 4) if concurrency > 0 else None,
+            "approx_std_per_row_seconds": round(std_request / concurrency, 4) if concurrency > 0 else None,
+        },
+    }
+    with open(timing_json_path, 'w') as f:
+        json.dump(timing_data, f, indent=2)
+
+    print(f"Timing summary saved to: {timing_summary_path}")
+    print(f"Timing JSON saved to:    {timing_json_path}")
+
+
 async def evaluate_batch(input_file, output_file, val_model, checker_model=None, max_concurrent=None):
     """Evaluate all rows in the TSV file with concurrent processing."""
     
@@ -209,11 +337,16 @@ async def evaluate_batch(input_file, output_file, val_model, checker_model=None,
     # Save results
     results_df.to_csv(output_file, sep='\t', index=False)
     
+    # ----- Save timing log -----
+    concurrency = settings.max_concurrent_requests
+    save_timing_log(results_df, output_file, total_runtime, total_rows, concurrency, val_model)
+    
     print("\n" + "=" * 60)
     print("Batch evaluation complete!")
     print("=" * 60)
     print(f"Total time: {total_runtime:.2f} seconds")
-    print(f"Average time per row: {total_runtime / total_rows:.2f} seconds")
+    print(f"Average time per row (wall-clock): {total_runtime / total_rows:.2f} seconds")
+    print(f"Concurrency: {concurrency}")
     print(f"Results saved to: {output_file}")
     
     # Calculate metrics
@@ -245,10 +378,13 @@ async def evaluate_batch(input_file, output_file, val_model, checker_model=None,
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
         f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
         
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        
         print(f"\nMetrics:")
-        print(f"  Precision: {precision:.3f}")
-        print(f"  Recall:    {recall:.3f}")
-        print(f"  F1 Score:  {f1:.3f}")
+        print(f"  Precision:   {precision:.3f}")
+        print(f"  Recall:      {recall:.3f}")
+        print(f"  Specificity: {specificity:.3f}")
+        print(f"  F1 Score:    {f1:.3f}")
     
     # Restore original max_concurrent if it was changed
     if max_concurrent:
