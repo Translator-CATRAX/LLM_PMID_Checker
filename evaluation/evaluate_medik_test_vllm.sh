@@ -26,8 +26,8 @@
 # OUTPUT_FILE="$BASE_DIR/evaluation/gptoss_20b_r1_120b_r2_evaluation_results.tsv"
 
 # Set base directory
-BASE_DIR="/home/grads/cqm5886/work/llm_pmid_support"
-INPUT_FILE="$BASE_DIR/evaluation/test_data.tsv"
+BASE_DIR="/home/grads/cqm5886/work/LLM_PMID_Checker"
+INPUT_FILE="$BASE_DIR/data/test_data.tsv"
 OUTPUT_FILE="${OUTPUT_FILE:-$BASE_DIR/evaluation/gptoss_20b_r1_120b_r2_evaluation_results.tsv}"
 VAL_MODEL="${VAL_MODEL:-gpt-oss-20b-vllm}"
 ROUND2_MODEL="${ROUND2_MODEL:-gpt-oss-120b-vllm}"

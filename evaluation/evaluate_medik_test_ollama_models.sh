@@ -8,7 +8,7 @@
 # GPU is configured in setup_ollama.sh with CUDA_VISIBLE_DEVICES=3
 
 # Set base directory
-BASE_DIR="/home/grads/cqm5886/work/llm_pmid_support"
+BASE_DIR="/home/grads/cqm5886/work/LLM_PMID_Checker"
 INPUT_FILE="$BASE_DIR/evaluation/test_data.tsv"
 OUTPUT_FILE="$BASE_DIR/evaluation/hermes4_70b_iq4_xs_evaluation_results_v2.tsv"
 METRICS_FILE="$BASE_DIR/evaluation/hermes4_70b_iq4_xs_evaluation_metrics_v2.txt"

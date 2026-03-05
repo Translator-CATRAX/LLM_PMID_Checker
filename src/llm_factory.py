@@ -2,9 +2,6 @@
 import logging
 from typing import Any
 from .config import settings
-from .ollama_client import OllamaClient
-from .openai_client import OpenAIClient
-from .vllm_client import VLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +40,9 @@ def create_llm_client(model_name: str) -> Any:
         logger.error(str(e))
         raise
     
-    # Route to appropriate client based on model type
+    # Lazy-import clients so only the required backend dependency is needed
     if settings.is_openai_model(validated_model):
+        from .openai_client import OpenAIClient
         logger.info(f"Using OpenAI client - Model: {validated_model}")
         if settings.openai_enable_web_search:
             logger.warning("OpenAI web_search tool enabled - Additional costs apply (~$10-50 per 1,000 searches)")
@@ -54,6 +52,7 @@ def create_llm_client(model_name: str) -> Any:
             enable_web_search=settings.openai_enable_web_search
         )
     elif settings.is_vllm_model(validated_model):
+        from .vllm_client import VLLMClient
         vllm_url = settings.get_vllm_url(validated_model)
         logger.info(f"Using vLLM client - Model: {validated_model}, URL: {vllm_url}")
         return VLLMClient(
@@ -61,6 +60,7 @@ def create_llm_client(model_name: str) -> Any:
             base_url=vllm_url
         )
     else:
+        from .ollama_client import OllamaClient
         logger.info(f"Using Ollama client - Model: {validated_model}")
         return OllamaClient(
             model=validated_model,

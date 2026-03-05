@@ -6,7 +6,7 @@
 # Prerequisites: OPENAI_API_KEY must be set in .env or environment
 
 # Set base directory
-BASE_DIR="/home/grads/cqm5886/work/llm_pmid_support"
+BASE_DIR="/home/grads/cqm5886/work/LLM_PMID_Checker"
 INPUT_FILE="$BASE_DIR/evaluation/test_data.tsv"
 OUTPUT_FILE="$BASE_DIR/evaluation/gpt_5_nano_evaluation_results.tsv"
 VAL_MODEL="gpt-5-nano"
