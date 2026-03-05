@@ -2,6 +2,9 @@
 /evaluation/*.tsv
 /evaluation/*.txt
 /evaluation/*.json
+/evaluation/results/*.tsv
+/evaluation/results/*.txt
+/evaluation/results/*.json
 
 # skip the logs directory
 /logs/*
@@ -19,3 +22,5 @@ src/__pycache__/
 # skip the python egg files
 *.egg-info/
 
+# skip all content in the openapi directory
+/src/arax_nn/openapi_server/*

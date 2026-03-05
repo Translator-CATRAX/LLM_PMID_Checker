@@ -22,12 +22,13 @@ def create_llm_client(model_name: str) -> Any:
         ValueError: If model_name is not in available_models
     """
     
-    # Aliases for convenience (Ollama models only)
     model_aliases = {
         "hermes4": settings.default_model if 'hermes4' in settings.default_model else "hermes4:70b-q4-m",
         "hermes4-fast": "hermes4:70b-q4-s",
         "hermes4-ultrafast": "hermes4:70b-iq4-xs",
         "gpt-oss": "gpt-oss:20b",
+        "gpt-oss-20b": "gpt-oss-20b-vllm",
+        "gpt-oss-120b": "gpt-oss-120b-vllm",
     }
     
     # Resolve alias if provided
@@ -53,10 +54,11 @@ def create_llm_client(model_name: str) -> Any:
             enable_web_search=settings.openai_enable_web_search
         )
     elif settings.is_vllm_model(validated_model):
-        logger.info(f"Using vLLM client - Model: {validated_model}")
+        vllm_url = settings.get_vllm_url(validated_model)
+        logger.info(f"Using vLLM client - Model: {validated_model}, URL: {vllm_url}")
         return VLLMClient(
             model=validated_model,
-            base_url=settings.vllm_base_url
+            base_url=vllm_url
         )
     else:
         logger.info(f"Using Ollama client - Model: {validated_model}")

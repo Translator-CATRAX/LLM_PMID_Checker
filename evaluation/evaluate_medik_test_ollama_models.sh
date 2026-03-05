@@ -22,10 +22,10 @@ echo "========================================"
 echo "Input:  $INPUT_FILE"
 echo "Output: $OUTPUT_FILE"
 echo "Model:  $VAL_MODEL"
-if [ -n "$CHECKER_MODEL" ]; then
-    echo "Checker Model: $CHECKER_MODEL (enabled)"
+if [ -n "$ROUND2_MODEL" ]; then
+    echo "Round 2 Model: $ROUND2_MODEL (enabled)"
 else
-    echo "Checker Model: disabled"
+    echo "Round 2 Model: disabled"
 fi
 echo "Max Concurrent: $MAX_CONCURRENT"
 echo "========================================"
@@ -49,9 +49,9 @@ fi
 # Build command
 cmd="python evaluation/evaluate_batch.py --input \"$INPUT_FILE\" --output \"$OUTPUT_FILE\" --val_model \"$VAL_MODEL\" --max_concurrent $MAX_CONCURRENT"
 
-# Add checker model if specified
-if [ -n "$CHECKER_MODEL" ]; then
-    cmd="$cmd --checker_model \"$CHECKER_MODEL\""
+# Add Round 2 model if specified
+if [ -n "$ROUND2_MODEL" ]; then
+    cmd="$cmd --round2_model \"$ROUND2_MODEL\""
 fi
 
 # Run batch evaluation

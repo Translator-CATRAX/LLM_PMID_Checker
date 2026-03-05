@@ -1,6 +1,6 @@
 """Configuration settings for the LLM PMID Checker system."""
 import os
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -21,6 +21,8 @@ DEFAULT_OPENAI_MODELS = [
 
 DEFAULT_VLLM_MODELS = [
     "hermes4-vllm",
+    "gpt-oss-20b-vllm",
+    "gpt-oss-120b-vllm",
 ]
 
 class Settings(BaseModel):
@@ -31,6 +33,7 @@ class Settings(BaseModel):
     
     # vLLM configuration
     vllm_base_url: str = os.getenv("VLLM_BASE_URL", "http://localhost:8000")
+    vllm_model_urls: Dict[str, str] = Field(default_factory=dict)
     
     # Available Ollama models (comma-separated list from .env)
     available_ollama_models: List[str] = Field(default_factory=list)
@@ -105,6 +108,15 @@ class Settings(BaseModel):
             else:
                 self.available_vllm_models = list(DEFAULT_VLLM_MODELS)
         
+        # Parse per-model vLLM URLs: "model1=url1,model2=url2"
+        vllm_urls_env = os.getenv("VLLM_MODEL_URLS", "")
+        if vllm_urls_env and not self.vllm_model_urls:
+            for pair in vllm_urls_env.split(","):
+                pair = pair.strip()
+                if "=" in pair:
+                    name, url = pair.split("=", 1)
+                    self.vllm_model_urls[name.strip()] = url.strip()
+        
         # Combine all model lists into available_models
         self.available_models = (
             self.available_ollama_models + 
@@ -138,15 +150,15 @@ class Settings(BaseModel):
         return model in self.available_ollama_models
     
     def is_vllm_model(self, model: str) -> bool:
-        """Check if a model is a vLLM model.
-        
-        Args:
-            model: Model name to check
-            
-        Returns:
-            True if model is a vLLM model, False otherwise
-        """
+        """Check if a model is a vLLM model."""
         return model in self.available_vllm_models
+    
+    def get_vllm_url(self, model: str) -> str:
+        """Get the base URL for a specific vLLM model.
+        
+        Falls back to the default vllm_base_url if no per-model URL is configured.
+        """
+        return self.vllm_model_urls.get(model, self.vllm_base_url)
     
     def validate_model(self, model: str) -> str:
         """Validate that a model name is in the available models list.
