@@ -4,7 +4,7 @@ Builds evaluation prompts based on the test/LLM_validator.py style
 (yes/no/maybe + supporting sentences) with equivalent names and
 optional entity info from node_dict.
 """
-from typing import List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import List, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .evaluation_agent import TripleData
@@ -168,7 +168,8 @@ def _get_instructions() -> str:
         '- If "no" or "maybe", return an empty list for "sentences".\n'
         "- For subject_mentioned / object_mentioned: set to true if the entity appears\n"
         "  ANYWHERE in the abstract (using equivalent names or common abbreviations).\n"
-        "  Entity mention is INDEPENDENT from whether the triple is supported.\n\n"
+        "  Entity mention is INDEPENDENT from whether the triple is supported.\n"
+        '- For "reasoning": briefly explain why you chose yes/no/maybe.\n\n'
     )
 
 
@@ -180,7 +181,8 @@ def _get_output_format() -> str:
         '  "support": "yes" | "no" | "maybe",\n'
         '  "sentences": ["exact sentence from abstract", ...],\n'
         '  "subject_mentioned": true/false,\n'
-        '  "object_mentioned": true/false\n'
+        '  "object_mentioned": true/false,\n'
+        '  "reasoning": "brief explanation of your judgment"\n'
         "}\n"
     )
 
@@ -190,8 +192,6 @@ def build_evaluation_prompt(
     abstract: str,
 ) -> str:
     """Build the complete evaluation prompt.
-
-    Used by Ollama and vLLM clients which send a single prompt.
 
     Args:
         triple: TripleData object or [subject, predicate, object] list
@@ -216,41 +216,3 @@ def build_evaluation_prompt(
     )
 
     return prompt
-
-
-def build_evaluation_prompt_parts(
-    triple: Union[List[str], 'TripleData'],
-    abstract: str,
-) -> Tuple[str, str]:
-    """Build the evaluation prompt split into cacheable and unique parts.
-
-    Used by OpenAI client for prompt caching optimization.
-    The cacheable prefix contains instructions and rules that stay the same
-    across requests for the same triple (but different abstracts).
-
-    Args:
-        triple: TripleData object or [subject, predicate, object] list
-        abstract: Abstract text to evaluate
-
-    Returns:
-        Tuple of (cacheable_prefix, unique_content)
-    """
-    info = _extract_triple_info(triple)
-
-    cacheable_prefix = (
-        "Analyze the abstract carefully and provide your answer as a JSON object.\n\n"
-        "**TASK**: Determine if this triple is supported by the abstract.\n\n"
-        f"{get_matching_rules()}"
-        f"{_get_instructions()}"
-        f"{_get_output_format()}"
-    )
-
-    unique_content = (
-        f"**TRIPLE**: {_build_triple_description(info)}\n\n"
-        f"{_build_entity_section('Subject', info['subject'], info['subject_info'], info['subject_names'])}\n"
-        f"{_build_entity_section('Object', info['object'], info['object_info'], info['object_names'])}\n"
-        f"{_build_qualifier_section(info)}"
-        f"**ABSTRACT**:\n{abstract}\n"
-    )
-
-    return cacheable_prefix, unique_content

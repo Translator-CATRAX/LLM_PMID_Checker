@@ -13,23 +13,23 @@
 # --- Config A: Hermes 4 only (single round) ---
 # VAL_MODEL="hermes4-vllm"
 # ROUND2_MODEL=""
-# OUTPUT_FILE="$BASE_DIR/evaluation/hermes4_vllm_evaluation_results.tsv"
+# OUTPUT_FILE="$BASE_DIR/evaluation/hermes4_vllm_results.db"
 #
 # --- Config B: GPT-OSS 20B only (single round) ---
 # VAL_MODEL="gpt-oss-20b-vllm"
 # ROUND2_MODEL=""
-# OUTPUT_FILE="$BASE_DIR/evaluation/gptoss20b_vllm_evaluation_results.tsv"
+# OUTPUT_FILE="$BASE_DIR/evaluation/gptoss20b_vllm_results.db"
 #
 # --- Config C: GPT-OSS 20B (R1) + 120B (R2) two-round ---
 # VAL_MODEL="gpt-oss-20b-vllm"
 # ROUND2_MODEL="gpt-oss-120b-vllm"
-# OUTPUT_FILE="$BASE_DIR/evaluation/gptoss_20b_r1_120b_r2_evaluation_results.tsv"
+# OUTPUT_FILE="$BASE_DIR/evaluation/gptoss_20b_r1_120b_r2_results.db"
 
 # Set base directory
 BASE_DIR="/home/grads/cqm5886/work/LLM_PMID_Checker"
 INPUT_FILE="$BASE_DIR/data/test_data.tsv"
-OUTPUT_FILE="${OUTPUT_FILE:-$BASE_DIR/evaluation/gptoss_20b_r1_120b_r2_evaluation_results.tsv}"
-VAL_MODEL="${VAL_MODEL:-gpt-oss-20b-vllm}"
+OUTPUT_FILE="${OUTPUT_FILE:-$BASE_DIR/evaluation/gptoss120b_vllm_results.db}"
+VAL_MODEL="${VAL_MODEL:-gpt-oss-120b-vllm}"
 ROUND2_MODEL="${ROUND2_MODEL:}"
 NODE_DICT="$BASE_DIR/data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz"
 MAX_CONCURRENT=24
@@ -69,7 +69,7 @@ if [ ! -f "$INPUT_FILE" ]; then
 fi
 
 # Build command
-cmd="python evaluation/evaluate_batch.py --input \"$INPUT_FILE\" --output \"$OUTPUT_FILE\" --val_model \"$VAL_MODEL\" --max_concurrent $MAX_CONCURRENT"
+cmd="python main.py --input \"$INPUT_FILE\" --output \"$OUTPUT_FILE\" --val_model \"$VAL_MODEL\" --max_concurrent $MAX_CONCURRENT"
 
 # Add Round 2 model if specified
 if [ -n "$ROUND2_MODEL" ]; then
@@ -94,19 +94,6 @@ if [ $exit_code -eq 0 ]; then
     echo "Batch evaluation completed successfully!"
     echo "========================================"
     echo "Results saved to: $OUTPUT_FILE"
-    echo ""
-
-    # Calculate metrics if the Python script exists
-    METRICS_FILE="${OUTPUT_FILE%.tsv}_metrics.txt"
-    if [ -f "$BASE_DIR/evaluation/calculate_metrics.py" ]; then
-        echo "Calculating metrics..."
-        python "$BASE_DIR/evaluation/calculate_metrics.py" "$OUTPUT_FILE" "$METRICS_FILE"
-        echo ""
-        echo "========================================"
-        echo "Metrics Summary"
-        echo "========================================"
-        cat "$METRICS_FILE"
-    fi
 
 else
     echo ""

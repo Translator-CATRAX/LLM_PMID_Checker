@@ -5,8 +5,8 @@ Computes average runtime and standard deviation.
 """
 
 import sys
-import pandas as pd
 import numpy as np
+import polars as pl
 
 
 def calculate_timing_stats(timing_file):
@@ -17,24 +17,21 @@ def calculate_timing_stats(timing_file):
         timing_file: Path to timing file with PMID and runtime_seconds columns
     """
     try:
-        # Read timing data
-        df = pd.read_csv(timing_file, sep='\t')
+        df = pl.read_csv(timing_file, separator='\t')
         
-        if df.empty:
+        if df.height == 0:
             print("No timing data available.")
             return
         
-        # Calculate statistics
-        runtimes = df['runtime_seconds'].values
+        runtimes = df['runtime_seconds'].to_numpy()
         mean_time = np.mean(runtimes)
-        std_time = np.std(runtimes, ddof=1)  # Sample standard deviation
+        std_time = np.std(runtimes, ddof=1)
         median_time = np.median(runtimes)
         min_time = np.min(runtimes)
         max_time = np.max(runtimes)
         total_time = np.sum(runtimes)
         count = len(runtimes)
         
-        # Print statistics
         print(f"Number of queries: {count}")
         print(f"Total runtime: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
         print(f"Average runtime: {mean_time:.2f} seconds")
@@ -58,4 +55,3 @@ if __name__ == "__main__":
     
     timing_file = sys.argv[1]
     calculate_timing_stats(timing_file)
-

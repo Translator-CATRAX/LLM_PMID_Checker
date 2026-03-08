@@ -5,18 +5,17 @@ Metrics: Accuracy, F1 Score, AUROC, AUPRC
 """
 
 import sys
-import pandas as pd
+import json
 import numpy as np
+import polars as pl
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, average_precision_score, confusion_matrix, classification_report
 
 
 def calculate_metrics(input_file, output_file):
     """Calculate and save evaluation metrics."""
     
-    # Read results
-    df = pd.read_csv(input_file, sep='\t')
+    df = pl.read_csv(input_file, separator='\t', infer_schema_length=0)
     
-    # Handle both old and new column names
     if 'is_supported_from_llm' in df.columns:
         predicted_col = 'is_supported_from_llm'
     else:
@@ -26,44 +25,36 @@ def calculate_metrics(input_file, output_file):
         print("Error: 'ground_truth' column not found!")
         return
     
-    # Filter out rows with Unknown or Error predictions
-    df_valid = df[~df[predicted_col].isin(['Unknown', 'Error'])].copy()
+    df_valid = df.filter(~pl.col(predicted_col).is_in(['Unknown', 'Error']))
     
-    if len(df_valid) == 0:
+    if df_valid.height == 0:
         print("Error: No valid predictions found!")
         return
     
-    # Convert string True/False to binary (handle various formats)
-    # Normalize to handle True/TRUE/true and False/FALSE/false
-    df_valid['ground_truth_str'] = df_valid['ground_truth'].astype(str).str.strip().str.lower()
-    df_valid['predicted_str'] = df_valid[predicted_col].astype(str).str.strip().str.lower()
+    gt_str = df_valid['ground_truth'].cast(pl.Utf8).str.strip_chars().str.to_lowercase()
+    pred_str = df_valid[predicted_col].cast(pl.Utf8).str.strip_chars().str.to_lowercase()
     
-    # Map to binary
-    df_valid['ground_truth_binary'] = df_valid['ground_truth_str'].map({'true': 1, 'false': 0})
-    df_valid['predicted_binary'] = df_valid['predicted_str'].map({'true': 1, 'false': 0})
+    gt_binary = gt_str.replace_strict({'true': '1', 'false': '0'}, default=None).cast(pl.Int8, strict=False)
+    pred_binary = pred_str.replace_strict({'true': '1', 'false': '0'}, default=None).cast(pl.Int8, strict=False)
     
-    # Debug: Show unique values before filtering
-    print(f"Unique ground_truth values: {df_valid['ground_truth'].unique()}")
-    print(f"Unique {predicted_col} values: {df_valid[predicted_col].unique()}")
+    print(f"Unique ground_truth values: {df_valid['ground_truth'].unique().to_list()}")
+    print(f"Unique {predicted_col} values: {df_valid[predicted_col].unique().to_list()}")
     
-    # Remove any rows with NaN values
-    df_valid = df_valid.dropna(subset=['ground_truth_binary', 'predicted_binary'])
+    mask = gt_binary.is_not_null() & pred_binary.is_not_null()
+    gt_binary = gt_binary.filter(mask)
+    pred_binary = pred_binary.filter(mask)
     
-    if len(df_valid) == 0:
+    if gt_binary.len() == 0:
         print("Error: No valid binary predictions after conversion!")
         print("This usually means the True/False values are not being recognized.")
         return
     
-    # Extract ground truth and predictions
-    y_true = df_valid['ground_truth_binary'].values
-    y_pred = df_valid['predicted_binary'].values
+    y_true = gt_binary.to_numpy()
+    y_pred = pred_binary.to_numpy()
     
-    # Calculate metrics
     accuracy = accuracy_score(y_true, y_pred)
     f1 = f1_score(y_true, y_pred, average='binary')
     
-    # AUROC and AUPRC require probability scores, but we only have binary predictions
-    # So we'll use the binary predictions as proxy scores
     try:
         auroc = roc_auc_score(y_true, y_pred)
     except ValueError:
@@ -74,16 +65,16 @@ def calculate_metrics(input_file, output_file):
     except ValueError:
         auprc = None
     
-    # Get confusion matrix
     cm = confusion_matrix(y_true, y_pred)
     tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
     
-    # Calculate additional metrics
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
     
-    # Create metrics report
+    valid_count = int(gt_binary.len())
+    total_count = df.height
+    
     report = f"""
 ========================================
 Evaluation Metrics Report
@@ -91,14 +82,14 @@ Evaluation Metrics Report
 
 Dataset Information:
 -------------------
-Total samples: {len(df)}
-Valid predictions: {len(df_valid)}
-Unknown predictions: {len(df) - len(df_valid)}
+Total samples: {total_count}
+Valid predictions: {valid_count}
+Unknown predictions: {total_count - valid_count}
 
 Class Distribution (Ground Truth):
 ---------------------------------
-True (Supported): {sum(y_true == 1)} ({sum(y_true == 1)/len(y_true)*100:.2f}%)
-False (Not Supported): {sum(y_true == 0)} ({sum(y_true == 0)/len(y_true)*100:.2f}%)
+True (Supported): {int(sum(y_true == 1))} ({sum(y_true == 1)/len(y_true)*100:.2f}%)
+False (Not Supported): {int(sum(y_true == 0))} ({sum(y_true == 0)/len(y_true)*100:.2f}%)
 
 Performance Metrics:
 -------------------
@@ -130,22 +121,17 @@ Detailed Classification Report:
 ------------------------------
 """
     
-    # Add sklearn classification report
     report += classification_report(y_true, y_pred, target_names=['Not Supported', 'Supported'])
     
     report += """
 ========================================
 """
     
-    # Write to file
     with open(output_file, 'w') as f:
         f.write(report)
     
-    # Also print to console
     print(report)
     
-    # Save metrics as JSON for easier parsing
-    import json
     metrics_dict = {
         'accuracy': float(accuracy),
         'f1_score': float(f1),
@@ -154,9 +140,9 @@ Detailed Classification Report:
         'specificity': float(specificity),
         'auroc': float(auroc) if auroc is not None else None,
         'auprc': float(auprc) if auprc is not None else None,
-        'total_samples': int(len(df)),
-        'valid_predictions': int(len(df_valid)),
-        'unknown_predictions': int(len(df) - len(df_valid)),
+        'total_samples': total_count,
+        'valid_predictions': valid_count,
+        'unknown_predictions': total_count - valid_count,
         'confusion_matrix': {
             'tn': int(tn),
             'fp': int(fp),
@@ -181,4 +167,3 @@ if __name__ == "__main__":
     output_file = sys.argv[2]
     
     calculate_metrics(input_file, output_file)
-

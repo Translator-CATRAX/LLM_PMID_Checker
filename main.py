@@ -3,288 +3,392 @@
 import argparse
 import asyncio
 import logging
+import sqlite3
 import sys
+import time
+from pathlib import Path
+
+import polars as pl
+
 from src.triple_evaluator import TripleEvaluatorSystem
-from src.node_normalization import NodeNormalizationClient
 from src.node_dict_loader import NodeDictLoader
 from src.config import settings
 
-def setup_logging(verbose: bool = False):
-    """Set up logging configuration."""
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+logger = logging.getLogger(__name__)
 
-async def main():
-    """Main CLI function."""
-    parser = argparse.ArgumentParser(
-        description="Check research triples against PMID abstracts using Ollama or OpenAI LLMs",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=        """
-Examples:
-  # Basic triples using names (requires node normalization)
-  python main.py --val_model gpt-oss:20b --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
-  python main.py --val_model hermes4:70b-q4-m --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
-  
-  # Basic triples using CURIEs directly
-  python main.py --val_model gpt-oss:20b --triple_curie "NCBIGene:6495" "affects" "UMLS:C0596290" --pmids 16186693 29083299
+PREDICATE_QUALIFIERS = {
+    'stimulates': {
+        'qualified_predicate': 'causes',
+        'qualified_object_aspect': 'activity_or_abundance',
+        'qualified_object_direction': 'increased',
+    },
+    'inhibits': {
+        'qualified_predicate': 'causes',
+        'qualified_object_aspect': 'activity_or_abundance',
+        'qualified_object_direction': 'decreased',
+    },
+    'produces': {
+        'qualified_predicate': 'causes',
+        'qualified_object_aspect': 'activity_or_abundance',
+        'qualified_object_direction': 'increased',
+    },
+}
 
-  # With node_dict for richer entity context (CURIEs mode)
-  python main.py --val_model hermes4:70b-q4-m --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz --triple_curie "NCBIGene:6495" "affects" "UMLS:C0596290" --pmids 16186693 29083299
+DEFAULT_QUALIFIERS = {
+    'qualified_predicate': 'causes',
+    'qualified_object_aspect': 'activity_or_abundance',
+    'qualified_object_direction': 'increased',
+}
 
-  # With qualifiers
-  python main.py --val_model hermes4:70b-q4-m --triple_name "SIX1" "affects" "Cell Proliferation" --qualified_predicate "causes" --qualified_object_direction "increased" --pmids 16186693 29083299
-  
-  # With Round 2 re-evaluation
-  python main.py --val_model hermes4:70b-q4-m --round2_model gpt-oss:20b --triple_name "SIX1" "affects" "Cell Proliferation" --pmids 16186693 29083299
-        """
+OUTPUT_COLUMNS = [
+    'predicted', 'support', 'subject_mentioned', 'object_mentioned',
+    'supporting_sentences', 'reasoning', 'runtime_seconds',
+]
+
+POLARS_TO_SQLITE = {
+    pl.Boolean: "INTEGER",
+    pl.Int8: "INTEGER", pl.Int16: "INTEGER", pl.Int32: "INTEGER", pl.Int64: "INTEGER",
+    pl.UInt8: "INTEGER", pl.UInt16: "INTEGER", pl.UInt32: "INTEGER", pl.UInt64: "INTEGER",
+    pl.Float32: "REAL", pl.Float64: "REAL",
+}
+
+DB_EXTENSIONS = {'.db', '.sqlite', '.sqlite3'}
+TSV_EXTENSIONS = {'.tsv', '.txt'}
+
+
+# ---------------------------------------------------------------------------
+# Output writers
+# ---------------------------------------------------------------------------
+
+def _detect_output_format(output_path: str) -> str:
+    """Return 'db' or 'tsv' based on the file extension."""
+    ext = Path(output_path).suffix.lower()
+    if ext in DB_EXTENSIONS:
+        return 'db'
+    if ext in TSV_EXTENSIONS:
+        return 'tsv'
+    return 'db'
+
+
+def _write_to_sqlite(df: pl.DataFrame, db_path: str, table_name: str) -> None:
+    """Write a Polars DataFrame to a SQLite table (replace if exists)."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    col_defs = []
+    for name, dtype in zip(df.columns, df.dtypes):
+        sql_type = POLARS_TO_SQLITE.get(dtype, "TEXT")
+        col_defs.append(f'"{name}" {sql_type}')
+
+    conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    conn.execute(f'CREATE TABLE "{table_name}" ({", ".join(col_defs)})')
+
+    placeholders = ", ".join("?" for _ in df.columns)
+    conn.executemany(
+        f'INSERT INTO "{table_name}" VALUES ({placeholders})',
+        df.rows(),
     )
-    
-    # Triple specification - mutually exclusive options
-    triple_group = parser.add_mutually_exclusive_group(required=True)
-    triple_group.add_argument(
-        '--triple_curie', 
-        nargs=3,
-        metavar=('SUBJECT_CURIE', 'PREDICATE', 'OBJECT_CURIE'),
-        help='Research triple as CURIEs (e.g., "NCBIGene:6495" "affects" "UMLS:C0596290")'
-    )
-    triple_group.add_argument(
-        '--triple_name', 
-        nargs=3,
-        metavar=('SUBJECT_NAME', 'PREDICATE', 'OBJECT_NAME'),
-        help='Research triple as names (e.g., "SIX1" "affects" "Cell Proliferation")'
-    )
-    
-    # Qualifier options
-    parser.add_argument(
-        '--qualified_predicate',
-        help='Qualified predicate (e.g., "causes"). Required if any qualifier is used.'
-    )
-    parser.add_argument(
-        '--qualified_object_aspect',
-        help='Object aspect qualifier (e.g., "activity", "abundance", "activity_or_abundance").'
-    )
-    parser.add_argument(
-        '--qualified_object_direction',
-        help='Object direction qualifier (e.g., "increased", "decreased", "upregulated").'
-    )
-    
-    # PMID specification
-    pmid_group = parser.add_mutually_exclusive_group(required=True)
-    pmid_group.add_argument(
-        '--pmids',
-        nargs='+',
-        help='List of PMIDs to evaluate'
-    )
-    pmid_group.add_argument(
-        '--pmids-file',
-        help='File containing PMIDs (one per line)'
-    )
-    
-    # Model selection
-    parser.add_argument('--val_model', type=str, default=settings.default_model,
-                        help=f"Model for triple validation (available: {', '.join(settings.available_models)})")
-    parser.add_argument('--round2_model', type=str, default=None,
-                        help="Optional Round 2 model for re-evaluation of yes/maybe results. "
-                             f"Available: {', '.join(settings.available_models)}")
-    
-    # Node dict for entity context
-    parser.add_argument('--node_dict', type=str, default=None,
-                        help="Path to KG2 nodes file (.jsonl.gz) or pre-built dict (.json/.json.gz) "
-                             "for enriching prompts with entity name, category, and description.")
-    
-    # Optional arguments
-    parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
-    parser.add_argument('--output', '-o', help='Output file (default: stdout)')
-    
-    args = parser.parse_args()
-    
-    setup_logging(args.verbose)
-    logger = logging.getLogger(__name__)
-    
-    # Validate qualifier constraints
-    has_any_qualifier = any([
-        args.qualified_predicate,
-        args.qualified_object_aspect,
-        args.qualified_object_direction
-    ])
-    
-    if has_any_qualifier:
-        if not args.qualified_predicate:
-            print("Error: qualified_predicate is required when using any qualifiers", file=sys.stderr)
-            return 1
-        if not args.qualified_object_aspect and not args.qualified_object_direction:
-            print("Error: At least one of qualified_object_aspect or qualified_object_direction "
-                  "must be provided when using qualifiers", file=sys.stderr)
-            return 1
-    
-    # Parse triple and get equivalent names
-    normalization_client = NodeNormalizationClient()
-    subject_info = None
-    object_info = None
-    
-    if args.triple_curie:
-        subject_curie, predicate, object_curie = args.triple_curie
-        print(f"Getting equivalent names for CURIEs: {subject_curie}, {object_curie}")
-        
-        subject_names = normalization_client.get_equivalent_names(curie=subject_curie)
-        object_names = normalization_client.get_equivalent_names(curie=object_curie)
-        
-        if not subject_names:
-            print(f"Warning: No equivalent names found for subject CURIE: {subject_curie}", file=sys.stderr)
-            subject_names = [subject_curie]
-        if not object_names:
-            print(f"Warning: No equivalent names found for object CURIE: {object_curie}", file=sys.stderr)
-            object_names = [object_curie]
-        
-        # Load node_dict if provided
-        if args.node_dict:
-            print(f"Loading entity info from: {args.node_dict}")
-            node_dict = NodeDictLoader.from_file(
-                args.node_dict,
-                target_curies={subject_curie, object_curie},
-            )
-            subject_info = node_dict.get_node_info(subject_curie)
-            object_info = node_dict.get_node_info(object_curie)
-            if subject_info:
-                print(f"  Subject info: {subject_info.get('name', 'N/A')} ({subject_info.get('category', 'N/A')})")
-            else:
-                print(f"  Subject CURIE {subject_curie} not found in node_dict")
-            if object_info:
-                print(f"  Object info: {object_info.get('name', 'N/A')} ({object_info.get('category', 'N/A')})")
-            else:
-                print(f"  Object CURIE {object_curie} not found in node_dict")
-        
-        triple_with_names = {
-            'subject': subject_names[0],
-            'predicate': predicate,
-            'object': object_names[0],
-            'subject_names': subject_names,
-            'object_names': object_names,
-        }
-        
-    elif args.triple_name:
-        subject_name, predicate, object_name = args.triple_name
-        subject_name = subject_name.replace(',', '')
-        object_name = object_name.replace(',', '')
-        print(f"Getting equivalent names for names: {subject_name}, {object_name}")
-        
-        subject_names = normalization_client.get_equivalent_names(name=subject_name)
-        object_names = normalization_client.get_equivalent_names(name=object_name)
-        
-        if not subject_names:
-            print(f"Warning: No equivalent names found for subject: {subject_name}", file=sys.stderr)
-            subject_names = [subject_name]
-        if not object_names:
-            print(f"Warning: No equivalent names found for object: {object_name}", file=sys.stderr)
-            object_names = [object_name]
-        
-        if args.node_dict:
-            print("Note: --node_dict requires CURIEs for lookup. "
-                  "Use --triple_curie to enable entity info enrichment.")
-        
-        triple_with_names = {
-            'subject': subject_name,
-            'predicate': predicate,
-            'object': object_name,
-            'subject_names': subject_names,
-            'object_names': object_names,
-        }
-    else:
-        print("Error: Either --triple_curie or --triple_name must be provided", file=sys.stderr)
-        return 1
-    
-    # Parse PMIDs
-    if args.pmids:
-        pmids = args.pmids
-    else:
-        try:
-            with open(args.pmids_file, 'r') as f:
-                pmids = [line.strip() for line in f if line.strip()]
-        except FileNotFoundError:
-            print(f"PMIDs file not found: {args.pmids_file}", file=sys.stderr)
-            return 1
-        except Exception as e:
-            print(f"Error reading PMIDs file: {e}", file=sys.stderr)
-            return 1
-    
-    if not pmids:
-        print("No PMIDs provided", file=sys.stderr)
-        return 1
-    
-    triple_display = f"['{triple_with_names['subject']}' {triple_with_names['predicate']} '{triple_with_names['object']}']"
-    print(f"Checking triple {triple_display} against {len(pmids)} PMIDs...")
-    print("=" * 60)
-    
+    conn.commit()
+    conn.close()
+
+
+def _write_to_tsv(df: pl.DataFrame, output_path: str) -> None:
+    """Write a Polars DataFrame to a TSV file."""
+    df.write_csv(output_path, separator='\t')
+
+
+# ---------------------------------------------------------------------------
+# Row evaluation
+# ---------------------------------------------------------------------------
+
+async def evaluate_single_row(evaluator, row: dict, row_idx: int,
+                              total_rows: int, node_dict=None):
+    """Evaluate a single row and return a dict of output columns only."""
     try:
-        # Validate models
-        try:
-            validation_model = settings.validate_model(args.val_model)
-        except ValueError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
-        
-        round2_model = None
-        if args.round2_model:
-            try:
-                round2_model = settings.validate_model(args.round2_model)
-            except ValueError as e:
-                print(f"Error: {e}", file=sys.stderr)
-                return 1
-        
-        print(f"Validation model: {validation_model}")
-        if round2_model:
-            print(f"Round 2 model:    {round2_model}")
-        else:
-            print("Round 2:          disabled")
-        print("=" * 60)
-        
-        evaluator = TripleEvaluatorSystem(
-            llm_provider=validation_model,
-            round2_model=round2_model,
-        )
-        
-        results = await evaluator.evaluate_triple_with_names(
-            subject=triple_with_names['subject'],
-            predicate=triple_with_names['predicate'], 
-            object_=triple_with_names['object'],
-            subject_names=triple_with_names['subject_names'],
-            object_names=triple_with_names['object_names'],
-            pmids=pmids,
+        subject_curie = row['subject_curie']
+        predicate = row['predicate']
+        object_curie = row['object_curie']
+        pmid = str(row['PMID'])
+
+        subject = row.get('subject') or subject_curie
+        object_ = row.get('object') or object_curie
+
+        qualifiers = PREDICATE_QUALIFIERS.get(predicate, DEFAULT_QUALIFIERS)
+
+        print(f"[{row_idx + 1}/{total_rows}] {subject_curie} | {predicate} | {object_curie}  PMID:{pmid}")
+
+        subject_info = node_dict.get_node_info(subject_curie) if node_dict else None
+        object_info = node_dict.get_node_info(object_curie) if node_dict else None
+
+        start = time.time()
+
+        result = await evaluator.evaluate_triple_with_names(
+            subject=subject,
+            predicate=predicate,
+            object_=object_,
+            subject_names=[subject],
+            object_names=[object_],
+            pmids=[pmid],
             subject_info=subject_info,
             object_info=object_info,
-            qualified_predicate=args.qualified_predicate,
-            qualified_object_aspect=args.qualified_object_aspect,
-            qualified_object_direction=args.qualified_object_direction,
+            qualified_predicate=qualifiers.get('qualified_predicate'),
+            qualified_object_aspect=qualifiers.get('qualified_object_aspect'),
+            qualified_object_direction=qualifiers.get('qualified_object_direction'),
         )
-        
-        formatted_output = results.format_output(verbose=args.verbose)
-        if args.output:
-            with open(args.output, 'w') as f:
-                f.write(formatted_output)
-            print(f"Results written to {args.output}")
-        else:
-            print(formatted_output)
-        
-        summary = results.get_summary()
-        print("\n" + "=" * 60)
-        print("CHECK SUMMARY")
-        print("=" * 60)
-        print(f"Total PMIDs: {summary['total_pmids']}")
-        print(f"Yes:   {summary['yes_count']} ({summary['yes_percentage']}%)")
-        print(f"Maybe: {summary['maybe_count']} ({summary['maybe_percentage']}%)")
-        print(f"No:    {summary['no_count']} ({summary['no_percentage']}%)")
-        
-        return 0
-        
+
+        runtime = time.time() - start
+
+        if result.evaluations:
+            ev = result.evaluations[0]
+            sentences = " | ".join(ev.supporting_sentences) if ev.supporting_sentences else ""
+            return {
+                'predicted': ev.is_supported,
+                'support': ev.support,
+                'subject_mentioned': ev.subject_mentioned,
+                'object_mentioned': ev.object_mentioned,
+                'supporting_sentences': sentences,
+                'reasoning': ev.reasoning or '',
+                'runtime_seconds': runtime,
+            }
+
+        return _error_output('No evaluation result', 0.0)
+
     except Exception as e:
-        print(f"Error during check: {e}", file=sys.stderr)
-        if args.verbose:
-            import traceback
-            traceback.print_exc()
+        print(f"    ERROR: {e}")
+        return _error_output(f'Error: {e}', 0.0)
+
+
+def _error_output(reasoning: str, runtime: float) -> dict:
+    return {
+        'predicted': False,
+        'support': 'no',
+        'subject_mentioned': False,
+        'object_mentioned': False,
+        'supporting_sentences': '',
+        'reasoning': reasoning,
+        'runtime_seconds': runtime,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Batch orchestration
+# ---------------------------------------------------------------------------
+
+async def run_batch(input_file: str, db_path: str, val_model: str, *,
+                    table_name: str = "evaluations",
+                    round2_model: str = None, node_dict_path: str = None,
+                    max_concurrent: int = None):
+    """Read a TSV, evaluate every row concurrently, and write to SQLite."""
+    original_max = settings.max_concurrent_requests
+    if max_concurrent:
+        settings.max_concurrent_requests = max_concurrent
+
+    concurrency = settings.max_concurrent_requests
+    print(f"Max concurrent requests: {concurrency}")
+
+    # ---- read input --------------------------------------------------
+    df = pl.read_csv(input_file, separator='\t', infer_schema_length=0)
+
+    required_cols = {'subject_curie', 'predicate', 'object_curie', 'PMID'}
+    missing = required_cols - set(df.columns)
+    if missing:
+        print(f"Error: input TSV is missing required columns: {missing}",
+              file=sys.stderr)
         return 1
 
+    if 'Supported' in df.columns and 'ground_truth' not in df.columns:
+        df = df.rename({'Supported': 'ground_truth'})
+
+    df = df.drop_nulls(subset=list(required_cols))
+    total_rows = df.height
+    out_fmt = _detect_output_format(db_path)
+
+    print(f"Input file:  {input_file}  ({total_rows} rows)")
+    print(f"Model:       {val_model}")
+    print(f"Round 2:     {round2_model or 'disabled'}")
+    if out_fmt == 'db':
+        print(f"Output DB:   {db_path}  (table: {table_name})")
+    else:
+        print(f"Output TSV:  {db_path}")
+
+    # ---- optional node_dict ------------------------------------------
+    node_dict = None
+    if node_dict_path:
+        all_curies = (
+            set(df['subject_curie'].drop_nulls().unique().to_list())
+            | set(df['object_curie'].drop_nulls().unique().to_list())
+        )
+        print(f"Loading node_dict for {len(all_curies)} CURIEs from: {node_dict_path}")
+        node_dict = NodeDictLoader.from_file(node_dict_path, target_curies=all_curies)
+        print(f"  Loaded info for {len(node_dict)} CURIEs")
+
+    print("=" * 60)
+
+    # ---- evaluate ----------------------------------------------------
+    evaluator = TripleEvaluatorSystem(
+        llm_provider=val_model,
+        round2_model=round2_model,
+    )
+    semaphore = asyncio.Semaphore(concurrency)
+
+    rows_as_dicts = df.to_dicts()
+
+    async def _eval(row, idx):
+        async with semaphore:
+            return await evaluate_single_row(evaluator, row, idx, total_rows,
+                                             node_dict)
+
+    overall_start = time.time()
+    tasks = [_eval(row, idx) for idx, row in enumerate(rows_as_dicts)]
+    print(f"Starting batch evaluation with {concurrency} concurrent workers...")
+    print("=" * 60)
+    results = await asyncio.gather(*tasks)
+    total_runtime = time.time() - overall_start
+
+    # ---- merge input columns with output columns ---------------------
+    output_df = pl.DataFrame(results)
+    df = df.hstack(output_df.select(OUTPUT_COLUMNS))
+
+    # ---- write output --------------------------------------------------
+    if out_fmt == 'db':
+        _write_to_sqlite(df, db_path, table_name)
+    else:
+        _write_to_tsv(df, db_path)
+
+    # ---- summary -----------------------------------------------------
+    print("\n" + "=" * 60)
+    print("Batch evaluation complete!")
+    print("=" * 60)
+    print(f"Total time:    {total_runtime:.2f}s  ({total_runtime / 60:.1f} min)")
+    print(f"Avg per row:   {total_runtime / total_rows:.2f}s")
+    if out_fmt == 'db':
+        print(f"Results in:    {db_path}  (table: {table_name})")
+    else:
+        print(f"Results in:    {db_path}")
+
+    support_counts = dict(
+        df['support'].value_counts()
+        .sort('support')
+        .iter_rows()
+    )
+    print(f"\nSupport distribution:")
+    for val in ('yes', 'maybe', 'no'):
+        print(f"  {val}: {support_counts.get(val, 0)}")
+
+    if 'ground_truth' in df.columns:
+        _print_metrics(df, total_rows)
+
+    if max_concurrent:
+        settings.max_concurrent_requests = original_max
+
+    return 0
+
+
+def _print_metrics(df: pl.DataFrame, total_rows: int):
+    """Print accuracy / confusion matrix when ground truth is available."""
+    gt_bool = df['ground_truth'].cast(pl.Utf8).str.strip_chars().str.to_lowercase().is_in(['true', '1', 'yes'])
+    pred_bool = df['predicted'].cast(pl.Utf8).str.strip_chars().str.to_lowercase().is_in(['true', '1', 'yes'])
+
+    tp = int((gt_bool & pred_bool).sum())
+    tn = int((~gt_bool & ~pred_bool).sum())
+    fp = int((~gt_bool & pred_bool).sum())
+    fn = int((gt_bool & ~pred_bool).sum())
+    correct = tp + tn
+    accuracy = correct / total_rows * 100 if total_rows else 0
+
+    print(f"\nAccuracy: {correct}/{total_rows} ({accuracy:.1f}%)")
+    print(f"\nConfusion Matrix:")
+    print(f"  TP: {tp}  TN: {tn}  FP: {fp}  FN: {fn}")
+
+    precision = tp / (tp + fp) if (tp + fp) else 0
+    recall = tp / (tp + fn) if (tp + fn) else 0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0
+    specificity = tn / (tn + fp) if (tn + fp) else 0
+
+    print(f"\n  Precision:   {precision:.3f}")
+    print(f"  Recall:      {recall:.3f}")
+    print(f"  Specificity: {specificity:.3f}")
+    print(f"  F1 Score:    {f1:.3f}")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Evaluate research triples from a TSV file using vLLM, "
+                    "saving results to a SQLite database.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Required TSV columns:  subject_curie, predicate, object_curie, PMID
+Optional TSV columns:  subject, object (entity names), ground_truth / Supported
+                       (any extra columns are preserved in the output)
+
+Output columns added:  predicted, support, subject_mentioned, object_mentioned,
+                       supporting_sentences, reasoning, runtime_seconds
+
+Output format is auto-detected from the --output file extension:
+  .db / .sqlite / .sqlite3  →  SQLite database
+  .tsv / .txt               →  Tab-separated values
+
+Examples:
+  python main.py --input data/test_data.tsv --output results.db --val_model gpt-oss-20b-vllm
+  python main.py --input data/test_data.tsv --output results.tsv --val_model gpt-oss-20b-vllm
+  python main.py --input data/test_data.tsv --output results.db --val_model hermes4-vllm --max_concurrent 16
+  python main.py --input data/test_data.tsv --output results.db --val_model gpt-oss-20b-vllm --round2_model gpt-oss-120b-vllm
+  python main.py --input data/test_data.tsv --output results.db --val_model gpt-oss-20b-vllm --table my_run_1
+        """,
+    )
+    parser.add_argument('--input', required=True,
+                        help='Input TSV file (must contain subject_curie, predicate, object_curie, PMID)')
+    parser.add_argument('--output', required=True,
+                        help='Output file. Use .db/.sqlite for SQLite or .tsv for TSV')
+    parser.add_argument('--table', default='evaluations',
+                        help='SQLite table name (only used for .db output; default: evaluations)')
+    parser.add_argument('--val_model', default=settings.default_model,
+                        help=f'Validation model (default: {settings.default_model})')
+    parser.add_argument('--round2_model', default=None,
+                        help='Optional Round 2 model for re-evaluation of yes/maybe results')
+    parser.add_argument('--node_dict', default=None,
+                        help='Path to KG2 nodes file (.jsonl.gz) or pre-built dict (.json/.json.gz)')
+    parser.add_argument('--max_concurrent', type=int, default=None,
+                        help=f'Max concurrent requests (default: {settings.max_concurrent_requests})')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Enable verbose (DEBUG) logging')
+
+    args = parser.parse_args()
+
+    level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    )
+
+    try:
+        settings.validate_model(args.val_model)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.round2_model:
+        try:
+            settings.validate_model(args.round2_model)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    rc = asyncio.run(run_batch(
+        input_file=args.input,
+        db_path=args.output,
+        val_model=args.val_model,
+        table_name=args.table,
+        round2_model=args.round2_model,
+        node_dict_path=args.node_dict,
+        max_concurrent=args.max_concurrent,
+    ))
+    sys.exit(rc)
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    main()

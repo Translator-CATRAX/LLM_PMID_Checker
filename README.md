@@ -4,202 +4,170 @@ A system for checking whether research triples are supported by PubMed abstracts
 
 ## Overview
 
-This system checks whether a given research triple (e.g., `['SIX1', 'affects', 'Cell Proliferation']`) is supported by a list of PubMed IDs (PMIDs). It:
+Given a TSV file of research triples (e.g., `SIX1 stimulates Cell Proliferation`) with associated PubMed IDs, this system:
 
-1. **Normalizes entities** using a multi-source approach:
-   - **HGNC** (Hugo Gene Nomenclature Committee) for gene/protein entities
-   - **ARAX TRAPI API** to convert names to CURIEs
-   - **Node Normalization API** to find equivalent identifiers
-   - **UMLS** (Unified Medical Language System) for additional medical term synonyms
-2. **Extracts abstracts** from PMIDs using NCBI E-utilities
-3. **Checks support** using AI models:
-   - **Local models** with **concurrent batch processing** via Ollama (Hermes 4, GPT-OSS)
-   - **Cloud models** via OpenAI API (GPT-5 nano, GPT-5 mini)
-4. **Reports results** with confidence scores and supporting sentences
+1. **Extracts abstracts** from PMIDs via NCBI E-utilities
+2. **Evaluates support** using vLLM-served models with concurrent batch processing
+3. **Saves results** to a SQLite database or TSV file, preserving all input columns alongside evaluation outputs
 
 ## Quick Start
 
 ### 1. Install Dependencies
-
-If you haven't pre-installed Ollama, you can download and install it from [here](https://ollama.com/download).
 
 ```bash
 conda activate llm_pmid_env
 pip install -r requirements.txt
 ```
 
-### 2. Setup Ollama
+### 2. Start vLLM Server(s)
 
-Run the provided setup script:
+Use the provided setup script to launch one or more vLLM servers:
 
 ```bash
-pkill -f "ollama serve"
-./setup_ollama.sh
+# Hermes 4 70B
+VLLM_MODEL=cyankiwi/Hermes-4-70B-AWQ-4bit VLLM_MODEL_NAME=hermes4-vllm VLLM_GPU=0 VLLM_PORT=8000 bash setup_vllm.sh
+
+# GPT-OSS 20B
+VLLM_MODEL=openai/gpt-oss-20b VLLM_MODEL_NAME=gpt-oss-20b-vllm VLLM_GPU=0 VLLM_PORT=8001 bash setup_vllm.sh
+
+# GPT-OSS 120B
+VLLM_MODEL=openai/gpt-oss-120b VLLM_MODEL_NAME=gpt-oss-120b-vllm VLLM_GPU=0 VLLM_PORT=8002 bash setup_vllm.sh
 ```
 
-This bash script will automatically launch Ollama and pull the necessary models. However, the hermes4 model is not available in the Ollama model hub yet, so you will need to manually install this model from Hugging Face. You can simply run the script `manual_install_hermes4.sh` to install the model.
+### 3. Pre-fetch PMID Abstracts (Recommended)
+
+Abstracts fetched from NCBI are automatically cached in a local SQLite database (`data/pmid_cache.db`). For large datasets, pre-fetch all abstracts before running evaluation to avoid rate limits during batch processing:
 
 ```bash
-./manual_install_hermes4.sh
+python scripts/prefetch_pmid_abstracts.py --tsv-file data/test_data.tsv
+
+# Adjust batch size and rate limiting
+python scripts/prefetch_pmid_abstracts.py --tsv-file data/test_data.tsv --batch-size 200 --delay 1.0
+
+# Force re-fetch (overwrite cached entries)
+python scripts/prefetch_pmid_abstracts.py --tsv-file data/test_data.tsv --force
 ```
 
-### 3. Configure Environment
-
-Create a `.env` file:
+To diagnose cache issues:
 
 ```bash
-# Ollama Configuration  
-OLLAMA_BASE_URL=http://localhost:11434
+# Find PMIDs that failed to cache (errors or missing abstracts)
+python scripts/check_failed_pmids.py --tsv-file data/test_data.tsv
 
-# Available Ollama models (comma-separated list)
-# Add or remove models as needed based on your 'ollama list' output
-# The first model in the list will be used as the default
-AVAILABLE_OLLAMA_MODELS=hermes4:70b-iq4-xs,hermes4:70b-q4-s,hermes4:70b-q4-m,gpt-oss:20b
+# Check overall cache status
+python scripts/check_cache_status.py
+```
 
-# NCBI E-utilities Configuration
+### 4. Configure Environment
+
+Create a `.env` file in the project root:
+
+```bash
+# NCBI E-utilities
 NCBI_EMAIL=your.email@example.com
 NCBI_API_KEY=your_ncbi_api_key_here
 
-# UMLS Settings (Optional - enhances name resolution)
-UMLS_API_KEY=your_umls_api_key_here
-USE_UMLS=true
-
-# ARAX and Node Normalization APIs
-# ARAX_BASE_URL=https://arax.transltr.io/api/arax/v1.4
-# NODE_NORM_BASE_URL=https://nodenormalization-sri.renci.org
-
-# OpenAI Configuration
-# API key for OpenAI commercial models (GPT-5 nano, GPT-5-mini, etc.)
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Available OpenAI models (comma-separated list)
-AVAILABLE_OPENAI_MODELS=gpt-5-nano,gpt-5-mini
-
-# Enable OpenAI's built-in web_search tool (Optional)
-# Default: false
-OPENAI_ENABLE_WEB_SEARCH=false
-
-# Batch Processing Configuration
-# Maximum concurrent requests for batch processing (default: 5)
-# Higher values = faster but more memory/CPU usage
+# Batch processing
 MAX_CONCURRENT_REQUESTS=5
+
+# vLLM Configuration
+VLLM_BASE_URL=http://localhost:8000
+
+# Per-model URLs (comma-separated model=url pairs)
+VLLM_MODEL_URLS=hermes4-vllm=http://localhost:8000,gpt-oss-20b-vllm=http://localhost:8001,gpt-oss-120b-vllm=http://localhost:8002
+
+# Available vLLM models (must match --served-model-name used when starting vLLM)
+AVAILABLE_VLLM_MODELS=hermes4-vllm,gpt-oss-20b-vllm,gpt-oss-120b-vllm
 ```
 
-**Note**: UMLS integration is optional but recommended. It enhances entity name resolution by combining UMLS Terminology Services with Node Normalization. See [UMLS_INTEGRATION.md](UMLS_INTEGRATION.md) for details.
+### 5. Run Evaluation
 
-### 4. Run Checker
+## Usage
 
-#### Web Interface (Recommended)
+```
+python main.py --input INPUT_TSV --output OUTPUT_FILE [options]
+```
 
-Launch the Streamlit web interface:
+Output format is auto-detected from the file extension:
+- `.db` / `.sqlite` / `.sqlite3` → SQLite database
+- `.tsv` / `.txt` → Tab-separated values
+
+| Flag | Description |
+|---|---|
+| `--input` | **(required)** Input TSV file |
+| `--output` | **(required)** Output file (`.db` for SQLite, `.tsv` for TSV) |
+| `--val_model` | Validation model (default: first in `AVAILABLE_VLLM_MODELS`) |
+| `--round2_model` | Optional Round 2 model for re-evaluating yes/maybe results |
+| `--table` | SQLite table name, only for `.db` output (default: `evaluations`) |
+| `--node_dict` | KG2 nodes file for richer entity context |
+| `--max_concurrent` | Max concurrent requests (default: `MAX_CONCURRENT_REQUESTS` from `.env`) |
+| `--verbose` / `-v` | Enable DEBUG logging |
+
+### Examples
 
 ```bash
-streamlit run app.py
+# Basic evaluation (SQLite output)
+python main.py --input data/test_data.tsv --output results.db --val_model gpt-oss-20b-vllm
+
+# TSV output
+python main.py --input data/test_data.tsv --output results.tsv --val_model gpt-oss-20b-vllm
+
+# High concurrency
+python main.py --input data/test_data.tsv --output results.tsv --val_model hermes4-vllm --max_concurrent 30
+
+# Two-round evaluation (Round 1 with 20B, Round 2 with 120B)
+python main.py --input data/test_data.tsv --output results.tsv \
+    --val_model gpt-oss-20b-vllm --round2_model gpt-oss-120b-vllm
+
+# With node_dict for entity context enrichment
+python main.py --input data/test_data.tsv --output results.tsv \
+    --val_model gpt-oss-20b-vllm --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz
+
+# Write to a custom table name (useful for multiple runs in the same DB)
+python main.py --input data/test_data.tsv --output results.tsv \
+    --val_model gpt-oss-20b-vllm --table run_20b_v1
 ```
 
-Then open your browser to `http://localhost:8501` and use the interactive interface to:
-- Enter research triples to check
-- Input PMIDs manually or via file upload  
-- Select AI models
-- View results with charts and export options
+## Input Format
 
-#### Command Line Interface
+The input TSV file **must** contain these columns:
 
-**Basic Triples Using Entity Names:**
-```bash
-# Using local Ollama models
-python main.py --val_model gpt-oss:20b --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929 16488997
-python main.py --val_model hermes4:70b-q4-m --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
+| Column | Description |
+|---|---|
+| `subject_curie` | Subject entity CURIE (e.g., `CHEBI:70723`) |
+| `predicate` | Relationship (e.g., `stimulates`, `inhibits`) |
+| `object_curie` | Object entity CURIE (e.g., `PR:000004517`) |
+| `PMID` | PubMed ID to check against |
 
-# Using OpenAI cloud models
-python main.py --val_model gpt-5-nano --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929 16488997
-python main.py --val_model gpt-5-mini --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
+Any additional columns in the TSV are carried through to the output unchanged.
+
+### Example TSV
+
+```
+subject	predicate	object	PMID	subject_curie	object_curie	Supported
+INCENP protein, human	stimulates	aurora kinase B	18767990	MESH:C083767	PR:000004517	true
+quercetagetin	inhibits	aurora kinase B	25298094	CHEBI:8695	PR:000004517	true
 ```
 
-**Basic Triples Using CURIEs:**
-```bash
-# Using local Ollama models
-python main.py --val_model gpt-oss:20b --triple_curie 'NCBIGene:6495' 'affects' 'UMLS:C0596290' --pmids 34513929 16488997
-python main.py --val_model hermes4:70b-q4-s --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids-file pmids.txt
+## Output Format
 
-# Using OpenAI cloud models
-python main.py --val_model gpt-5-nano --triple_curie 'NCBIGene:6495' 'affects' 'UMLS:C0596290' --pmids 34513929 16488997
-```
+Results are written to a **SQLite database** (`.db`) or a **TSV file** (`.tsv`), depending on the `--output` extension. Both formats contain all columns from the input TSV plus these evaluation columns:
 
-**Qualified Triples:**
-```bash
-# With all qualifiers
-python main.py --val_model hermes4:70b-q4-m --triple_name 'SIX1' 'affects' 'Cell Proliferation' \
-  --qualified_predicate 'causes' \
-  --qualified_object_aspect 'activity' \
-  --qualified_object_direction 'increased' \
-  --pmids 34513929
-
-# With only direction qualifier
-python main.py --val_model gpt-oss:20b --triple_curie 'NCBIGene:6495' 'affects' 'UMLS:C0596290' \
-  --qualified_predicate 'causes' \
-  --qualified_object_direction 'upregulated' \
-  --pmids 34513929
-
-# With only aspect qualifier  
-python main.py --val_model hermes4:70b-q4-m --triple_name 'SIX1' 'affects' 'Cell Proliferation' \
-  --qualified_predicate 'causes' \
-  --qualified_object_aspect 'activity_or_abundance' \
-  --pmids 34513929
-  
-# With verification enabled
-python main.py --val_model hermes4:70b-q4-m --checker_model gpt-oss:20b --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
-python main.py --val_model gpt-5-nano --checker_model gpt-5-mini --triple_name 'SIX1' 'affects' 'Cell Proliferation' --pmids 34513929
-```
-
-Qualifiers include:
-- **Qualified Predicate** (required): More specific relationship (e.g., `causes`)
-- **Object Aspect** (optional): What aspect is affected (e.g., `activity`, `abundance`, `activity_or_abundance`, `localization`)
-- **Object Direction** (optional): Direction of change (e.g., `increased`, `decreased`, `upregulated`, `downregulated`)
-
-**Constraint**: If using qualifiers, `qualified_predicate` is required and at least one of `qualified_object_aspect` or `qualified_object_direction` must be provided.
-
-## Model Selection and Verification
-
-### Validation and Checker Models
-
-The system supports two separate model selections:
-
-1. **Validation Model** (`--val_model`): Model used to evaluate triples against abstracts
-   - Local Ollama models: `hermes4:70b-iq4-xs`, `hermes4:70b-q4-s`, `hermes4:70b-q4-m`, `gpt-oss:20b`
-   - OpenAI cloud models: `gpt-5-nano`, `gpt-5-mini`
-   - This is the primary model that performs the evaluation
-
-2. **Checker Model** (`--checker_model`): Model used to verify and correct the validation results
-   - Optional: If not provided, verification is disabled
-   - Can be the same as or different from the validation model
-   - Can mix local and cloud models (e.g., validate with Hermes, verify with GPT-5)
-
-**Example Combinations:**
-```bash
-# Use Hermes 4 (Q4_M) for validation, GPT-OSS for verification
-python main.py --val_model hermes4:70b-q4-m --checker_model gpt-oss:20b ...
-
-# Use GPT-5 models for both validation and verification
-python main.py --val_model gpt-5-nano --checker_model gpt-5-mini ...
-
-# Mix local and cloud: validate with OpenAI, verify with Ollama
-python main.py --val_model gpt-5-nano --checker_model gpt-oss:20b ...
-
-# Use Hermes 4 (IQ4_XS) without verification (omit --checker_model)
-python main.py --val_model hermes4:70b-iq4-xs ...
-```
+| Column | Type | Description |
+|---|---|---|
+| `predicted` | bool | Whether the triple is supported (`support == "yes"`) |
+| `support` | text | `yes`, `no`, or `maybe` |
+| `subject_mentioned` | bool | Whether the subject appears in the abstract |
+| `object_mentioned` | bool | Whether the object appears in the abstract |
+| `supporting_sentences` | text | Exact sentences from the abstract (pipe-separated) |
+| `reasoning` | text | LLM's reasoning for the judgment |
+| `runtime_seconds` | real | Wall-clock time for this evaluation |
 
 ## Available Models
 
-### Local Ollama Models
-- **Hermes 4 70B (IQ4_XS)**: Fastest Hermes variant with the lowest VRAM usage (~28 GB). Great for lighter GPUs.
-- **Hermes 4 70B (Q4_S)**: Balanced quality/speed option requiring ~34 GB VRAM. Recommended default for most workflows.
-- **Hermes 4 70B (Q4_M)**: Highest quality quantization requiring ~42 GB VRAM. Best accuracy when resources permit.
-- **GPT-OSS 20B**: Open-source 20B parameter model (~12 GB VRAM). Good baseline and faster responses.
+| Model | HuggingFace Repo |
+|---|---|
+| `hermes4-vllm` | [cyankiwi/Hermes-4-70B-AWQ-4bit](https://huggingface.co/cyankiwi/Hermes-4-70B-AWQ-4bit) |
+| `gpt-oss-20b-vllm` | [openai/gpt-oss-20b](https://huggingface.co/openai/gpt-oss-20b) |
+| `gpt-oss-120b-vllm` | [openai/gpt-oss-120b](https://huggingface.co/openai/gpt-oss-120b) |
 
-### OpenAI Cloud Models
-- **GPT-5 Nano**: OpenAI's smallest GPT-5 model. Fast, cost-effective, suitable for high-volume tasks.
-- **GPT-5 Mini**: OpenAI's mid-tier GPT-5 model. Balanced performance and cost for general use.
-
-**Note**: OpenAI models require an API key and incur usage costs. See [OpenAI Pricing](https://openai.com/pricing) for details.
