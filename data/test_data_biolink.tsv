@@ -1,0 +1,222 @@
+subject	predicate	object	PMID	subject_curie	object_curie	Supported
+INCENP protein, human	biolink:increases_amount_or_activity_of	aurora kinase B	18767990	MESH:C083767	PR:000004517	true
+2-(4-morpholinoanilino)-6-cyclohexylaminopurine	biolink:decreases_amount_or_activity_of	Aurora kinase b	27447890	CHEBI:70723	PR:000004517	true
+Flavones [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	aurora kinase B	25298094	CHEBI:24043	PR:000004517	true
+quercetagetin	biolink:decreases_amount_or_activity_of	aurora kinase B	25298094	CHEBI:8695	PR:000004517	true
+Green Fluorescent Proteins [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	aurora kinase B	21710690	MESH:D049452	PR:000004517	false
+Okadaic acid	biolink:increases_amount_or_activity_of	serine/threonine kinase 3	18362890	CHEBI:44658	MESH:D000090742	true
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	serine/threonine kinase 3	15701972	UMLS:C1099354	MESH:D000090742	true
+Visilizumab	biolink:increases_amount_or_activity_of	toll like receptor 1	1483950	UNII:H18SKU3289	PR:000001151	false
+Peptidoglycan [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	toll like receptor 1	12874299	CHEBI:8005	PR:000001151	false
+Resveratrol	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	21209944	CHEBI:45713	PR:000002108	true
+recombinant TNF-related apoptosis-inducing ligand	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	14965271	UMLS:C1522480	PR:000002108	true
+Bufalin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	22447040	CHEBI:517248	PR:000002108	true
+periplocin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	23365613	UNII:199X940O3K	PR:000002108	true
+MEK Inhibitor PD-98059	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	21702500	NCIT:C1625	PR:000002108	true
+plumbagin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	28498435	CHEBI:8273	PR:000002108	true
+Dipyridamole	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	18193086	CHEBI:4653	PR:000002108	true
+embelin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	25293521	CHEBI:4778	PR:000002108	true
+Ellagic Acid	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	26959625	CHEBI:4775	PR:000002108	true
+Etoposide	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	15389801	CHEBI:4911	PR:000002108	true
+ursolic acid	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	21156789	CHEBI:9908	PR:000002108	true
+Maduramicin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	29047155	CHEBI:189929	PR:000002108	true
+Reactive Oxygen Species [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	25017974	CHEBI:26523	PR:000002108	true
+bortezomib	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	11772267	CHEBI:52717	PR:000002108	false
+2-cyclopentyl-5-(5-isoquinolylsulfonyl)-6-nitro-1H-benzo(D)imidazole	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	26081757	MESH:C436284	PR:000002108	false
+RNA, Small Interfering [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	27198178	UMLS:C1099354	PR:000002108	true
+pterostilbene	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	29164887	CHEBI:8630	PR:000002108	true
+Ascorbic acid	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	21172010	CHEBI:22652	PR:000002108	false
+Mitomycin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	14534720	CHEBI:27504	PR:000002108	true
+Camptothecin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	15389801	CHEBI:27656	PR:000002108	true
+Vinblastine	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	15389801	CHEBI:9984	PR:000002108	true
+Vincristine	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	15389801	CHEBI:28445	PR:000002108	true
+Kaempferol	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	18680719	CHEBI:28499	PR:000002108	true
+Doxorubicin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	15389801	CHEBI:28748	PR:000002108	true
+Indole-3-carbinol	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	12782325	CHEBI:24814	PR:000002108	true
+Tretinoin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	16449964	CHEBI:15367	PR:000002108	true
+Oleic acid	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	1955008	CHEBI:16196	PR:000002108	false
+Adriamycin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	12584736	CHEBI:28748	PR:000002108	true
+Adriamycin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	14534720	CHEBI:28748	PR:000002108	true
+Venopyronum Dragee	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	3498493	MESH:C028776	PR:000002108	false
+Antineoplastics	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	12082627	VANDF:4021538	PR:000002108	true
+Antineoplastics	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	18203008	VANDF:4021538	PR:000002108	true
+Acetate	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	16289031	CHEBI:30089	PR:000002108	false
+Acetylcysteine	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	21127198	CHEBI:28939	PR:000002108	false
+Acetylcysteine	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	25017974	CHEBI:28939	PR:000002108	false
+Cisplatin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	17037746	CHEBI:27899	PR:000002108	true
+Cisplatin	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	26463141	CHEBI:27899	PR:000002108	false
+Deoxyribonucleic acid	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	1684173	CHEBI:16991	PR:000002108	false
+Gefitinib	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	27629794	CHEBI:49668	PR:000002108	true
+Allyl trisulfide	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	18723480	CHEBI:78492	PR:000002108	true
+ilimaquinone	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	24930757	CHEBI:70133	PR:000002108	true
+Sulforaphane	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	18980980	CHEBI:47807	PR:000002108	true
+Paclitaxel	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	26329920	CHEBI:45863	PR:000002108	true
+Paclitaxel	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	15389801	CHEBI:45863	PR:000002108	false
+Paclitaxel	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	11802207	CHEBI:45863	PR:000002108	false
+Vorinostat	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	19737941	CHEBI:45716	PR:000002108	true
+Proanthocyanidins	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	21713362	CHEBI:26267	PR:000002108	true
+pyrazolanthrone	biolink:increases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	23857473	CHEBI:90695	PR:000002108	true
+Reactive Oxygen Species [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	28869219	CHEBI:26523	PR:000002108	false
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	25796504	UMLS:C1099354	PR:000002108	true
+Sulindac	biolink:decreases_amount_or_activity_of	Tumor necrosis factor receptor superfamily, member 10a	16030090	CHEBI:9352	PR:000002108	false
+curcumol	biolink:decreases_amount_or_activity_of	Cyclin-dependent kinase-like 3	29615928	CHEBI:173719	PR:000005271	true
+Threonine	biolink:increases_amount_or_activity_of	checkpoint kinase 2	11390408	CHEBI:16857	MESH:D064447	false
+Antigens, Polyomavirus Transforming	biolink:decreases_amount_or_activity_of	checkpoint kinase 2	10531348	MESH:D000952	MESH:D064447	false
+We 201	biolink:increases_amount_or_activity_of	cyclin dependent kinase like 2	14757365	PUBCHEM.COMPOUND:86554	PR:000005270	false
+Reactive Oxygen Species [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	cyclin dependent kinase like 2	12884292	CHEBI:26523	PR:000005270	false
+Reactive Oxygen Species [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	cyclin dependent kinase like 2	10744701	CHEBI:26523	PR:000005270	false
+Ionomycin	biolink:increases_amount_or_activity_of	cyclin dependent kinase like 2	10362499	CHEBI:63954	PR:000005270	false
+p-Methoxy-N-methylphenethylamine	biolink:increases_amount_or_activity_of	cyclin dependent kinase like 2	27553716	CHEBI:75143	PR:000005270	false
+Ceramide	biolink:increases_amount_or_activity_of	cyclin dependent kinase like 2	10788436	CHEBI:17761	PR:000005270	true
+Absolute Genomic Position	biolink:decreases_amount_or_activity_of	cyclin dependent kinase like 2	12798323	UMLS:C4085934	PR:000005270	false
+Absolute Genomic Position	biolink:decreases_amount_or_activity_of	cyclin dependent kinase like 2	12852972	UMLS:C4085934	PR:000005270	false
+Atom	biolink:decreases_amount_or_activity_of	cyclin dependent kinase like 2	10087161	CHEBI:33250	PR:000005270	true
+Damnacanthal	biolink:decreases_amount_or_activity_of	cyclin dependent kinase like 2	10650151	CHEBI:93633	PR:000005270	false
+N-Methylaspartate [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	cyclin dependent kinase like 2	9131770	UMLS:C0079883	PR:000005270	false
+Epitope	biolink:decreases_amount_or_activity_of	cyclin dependent kinase like 2	11710991	CHEBI:53000	PR:000005270	false
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	cyclin dependent kinase inhibitor 3	21170338	UMLS:C1099354	PR:000005280	false
+Messenger RNA	biolink:decreases_amount_or_activity_of	cyclin dependent kinase inhibitor 3	9859216	CHEBI:33699	PR:000005280	false
+2-aminoethoxydiphenyl borate	biolink:increases_amount_or_activity_of	transient receptor potential cation channel subfamily M member 6	16636202	CHEBI:131184	PR:000016702	true
+Glucocorticoids	biolink:increases_amount_or_activity_of	transient receptor potential cation channel subfamily M member 6	25692682	CHEBI:24261	PR:000016702	true
+Estrogens	biolink:increases_amount_or_activity_of	transient receptor potential cation channel subfamily M member 6	19780399	CHEBI:50114	PR:000016702	true
+Adenosine triphosphate	biolink:increases_amount_or_activity_of	transient receptor potential cation channel subfamily M member 6	18949482	CHEBI:15422	PR:000016702	false
+Magnesium	biolink:decreases_amount_or_activity_of	transient receptor potential cation channel subfamily M member 6	29912157	CHEBI:6636	PR:000016702	false
+Dopamine	biolink:increases_amount_or_activity_of	CDC like kinase 1	22581798	CHEBI:4698	UMLS:C0962157	false
+Absolute Genomic Position	biolink:decreases_amount_or_activity_of	Cdc-like kinase 1	20081832	UMLS:C4085934	UMLS:C0962157	false
+Thiophenes [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	CDC like kinase 1	24676346	CHEBI:26961	UMLS:C0962157	true
+Amine	biolink:decreases_amount_or_activity_of	CDC like kinase 1	19837585	CHEBI:32952	UMLS:C0962157	false
+Amine	biolink:decreases_amount_or_activity_of	CDC like kinase 1	23237976	CHEBI:32952	UMLS:C0962157	true
+Amine	biolink:decreases_amount_or_activity_of	CDC like kinase 1	21450467	CHEBI:32952	UMLS:C0962157	false
+Fluorine	biolink:decreases_amount_or_activity_of	CDC like kinase 1	28561591	CHEBI:30236	UMLS:C0962157	false
+sodium butyrate	biolink:increases_amount_or_activity_of	Death-associated protein kinase 1	22160140	CHEBI:64103	PR:000006276	true
+Trichostatin a	biolink:increases_amount_or_activity_of	death associated protein kinase 1	16865256	CHEBI:46024	PR:000006276	true
+grifolin	biolink:increases_amount_or_activity_of	death associated protein kinase 1	20943371	CHEBI:170125	PR:000006276	true
+Second Messenger Systems	biolink:increases_amount_or_activity_of	death associated protein kinase 1	22465880	UMLS:C0036522	PR:000006276	false
+Dioscin	biolink:increases_amount_or_activity_of	death associated protein kinase 1	28435431	CHEBI:74023	PR:000006276	true
+Azacitidine	biolink:increases_amount_or_activity_of	death associated protein kinase 1	29844679	CHEBI:2038	PR:000006276	true
+Pyrimidinones [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	death associated protein kinase 1	24070067	PUBCHEM.COMPOUND:162786624	PR:000006276	false
+Rosiglitazone	biolink:increases_amount_or_activity_of	death associated protein kinase 3	21585338	CHEBI:50122	PR:000006278	false
+Zinc	biolink:increases_amount_or_activity_of	death associated protein kinase 3	12374293	CHEBI:27363	PR:000006278	false
+Zinc	biolink:increases_amount_or_activity_of	death associated protein kinase 3	22824090	CHEBI:27363	PR:000006278	false
+Uridine diphosphate	biolink:increases_amount_or_activity_of	death associated protein kinase 3	25975647	CHEBI:17659	PR:000006278	false
+Vanadates [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	death associated protein kinase 3	19146952	CHEBI:75224	PR:000006278	false
+Zinc	biolink:decreases_amount_or_activity_of	death associated protein kinase 3	18477665	CHEBI:27363	PR:000006278	false
+Pyrimidinones [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	death associated protein kinase 3	24070067	PUBCHEM.COMPOUND:162786624	PR:000006278	true
+Cadmium	biolink:decreases_amount_or_activity_of	death associated protein kinase 3	19194888	CHEBI:22977	PR:000006278	false
+Cladribine	biolink:increases_amount_or_activity_of	Deoxycytidine kinase	15571258	CHEBI:567361	PR:000006309	true
+Cladribine	biolink:increases_amount_or_activity_of	Deoxycytidine kinase	10674004	CHEBI:567361	PR:000006309	true
+Azacitidine	biolink:increases_amount_or_activity_of	Deoxycytidine kinase	1705001	CHEBI:2038	PR:000006309	true
+Cytarabine	biolink:increases_amount_or_activity_of	Deoxycytidine kinase	7541096	CHEBI:28680	PR:000006309	false
+Aphidicolin [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	Deoxycytidine kinase	15571258	CHEBI:2766	PR:000006309	true
+Aphidicolin [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	Deoxycytidine kinase	26620371	CHEBI:2766	PR:000006309	false
+Aphidicolin [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	Deoxycytidine kinase	11163333	CHEBI:2766	PR:000006309	true
+Decitabine	biolink:increases_amount_or_activity_of	Deoxycytidine kinase	7541096	CHEBI:50131	PR:000006309	false
+Cladribine	biolink:decreases_amount_or_activity_of	Deoxycytidine kinase	24972933	CHEBI:567361	PR:000006309	false
+Gemcitabine	biolink:decreases_amount_or_activity_of	Deoxycytidine kinase	24972933	CHEBI:175901	PR:000006309	false
+Fludarabine	biolink:decreases_amount_or_activity_of	Deoxycytidine kinase	24972933	CHEBI:63599	PR:000006309	false
+Diglyceride	biolink:increases_amount_or_activity_of	diacylglycerol kinase beta	16905533	PUBCHEM.COMPOUND:117791079	PR:000006443	false
+4-Methoxyamphetamine	biolink:increases_amount_or_activity_of	diacylglycerol kinase beta	15228384	UNII:OVB8F8P39Q	PR:000006443	false
+Ritanserin	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	27974147	CHEBI:64195	PR:000006443	false
+Ritanserin	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	27989726	CHEBI:64195	PR:000006443	false
+Ritanserin	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	29572701	CHEBI:64195	PR:000006443	false
+Ritanserin	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	28712745	CHEBI:64195	PR:000006443	false
+Absolute Genomic Position	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	26768655	UMLS:C4085934	PR:000006443	false
+Sb 203580	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	22627682	CHEBI:90705	PR:000006443	false
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	25112873	UMLS:C1099354	PR:000006443	false
+alar	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	7896799	UMLS:C0702172	PR:000006443	false
+R 59022	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	21034360	CHEBI:92958	PR:000006443	true
+R 59022	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	15578578	CHEBI:92958	PR:000006443	true
+R 59022	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	23264678	CHEBI:92958	PR:000006443	true
+Diglyceride	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	22451476	PUBCHEM.COMPOUND:117791079	PR:000006443	false
+Zinc	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	23266086	CHEBI:27363	PR:000006443	false
+Magnesium	biolink:decreases_amount_or_activity_of	diacylglycerol kinase beta	23266086	CHEBI:6636	PR:000006443	false
+Nicotinamide adenine dinucleotide	biolink:increases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	16597970	CHEBI:15846	PR:000006781	false
+epigallocatechin gallate	biolink:increases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	19242551	CHEBI:4806	PR:000006781	false
+Tyrosine	biolink:increases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	23665168	CHEBI:17895	PR:000006781	false
+Manganese	biolink:increases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	26589320	CHEBI:18291	PR:000006781	false
+Manganese	biolink:increases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	10385895	CHEBI:18291	PR:000006781	false
+natural product	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	28264138	CHV:0000001885	PR:000006781	true
+Water	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	23336033	CHEBI:15377	PR:000006781	false
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	23124096	UMLS:C1099354	PR:000006781	true
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	26803494	UMLS:C1099354	PR:000006781	true
+Pyrimidines [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	27119584	CHEBI:39447	PR:000006781	false
+Indole	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	28408219	CHEBI:16881	PR:000006781	false
+indirubin	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	23336033	UNII:V86L8P74GI	PR:000006781	true
+Polyphenol	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	28478033	CHEBI:26195	PR:000006781	true
+Phenylalanine	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	11672423	CHEBI:17295	PR:000006781	false
+Thiophenes [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	24676346	CHEBI:26961	PR:000006781	true
+Thiophenes [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	25247807	CHEBI:26961	PR:000006781	true
+Quinazoline	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	25268714	CHEBI:36621	PR:000006781	true
+Quinazoline	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	25264830	CHEBI:36621	PR:000006781	true
+Radioactive Tracers [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	28163906	MESH:D011849	PR:000006781	false
+therapeutic agent	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	19282176	UMLS:C0304231	PR:000006781	true
+Amine	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	23496085	CHEBI:32952	PR:000006781	false
+Amine	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	21735605	CHEBI:32952	PR:000006781	false
+Carbolines	biolink:decreases_amount_or_activity_of	dual specificity tyrosine phosphorylation regulated kinase 1A	25240617	MESH:D002243	PR:000006781	true
+polydatin	biolink:increases_amount_or_activity_of	glucokinase	26833058	CHEBI:8198	MESH:D005941	true
+Triglycerides	biolink:increases_amount_or_activity_of	glucokinase	22569791	CHEBI:17855	MESH:D005941	false
+Blood Glucose [Chemical/Ingredient]	biolink:increases_amount_or_activity_of	glucokinase	28967662	MESH:D001786	MESH:D005941	false
+Hypoglycemic agent	biolink:increases_amount_or_activity_of	glucokinase	22946641	CHEBI:35526	MESH:D005941	false
+Glucose	biolink:increases_amount_or_activity_of	glucokinase	21861178	CHEBI:4167	MESH:D005941	false
+Glucose	biolink:increases_amount_or_activity_of	glucokinase	21744293	CHEBI:4167	MESH:D005941	true
+Kinase Inhibitor [EPC]	biolink:decreases_amount_or_activity_of	glucokinase	28385506	UMLS:C3537035	MESH:D005941	true
+Glycerin	biolink:decreases_amount_or_activity_of	glucokinase	22513097	CHEBI:17754	MESH:D005941	false
+Atorvastatin	biolink:decreases_amount_or_activity_of	glucokinase	26616219	CHEBI:2911	MESH:D005941	true
+Pregnenolone Carbonitrile [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	glucokinase	26616219	CHEBI:35591	MESH:D005941	true
+Glucose	biolink:decreases_amount_or_activity_of	glucokinase	9023215	CHEBI:4167	MESH:D005941	false
+Glucose	biolink:decreases_amount_or_activity_of	glucokinase	9393732	CHEBI:4167	MESH:D005941	false
+2-deoxy-D-glucose	biolink:decreases_amount_or_activity_of	glucokinase	28206714	CHEBI:15866	MESH:D005941	true
+Proteasome inhibitor	biolink:increases_amount_or_activity_of	hexokinase 1	21832054	CHEBI:52726	PathWhiz.ProteinComplex:103	true
+Monocrotaline	biolink:increases_amount_or_activity_of	hexokinase 1	25287584	CHEBI:6980	PathWhiz.ProteinComplex:103	true
+Galactose	biolink:increases_amount_or_activity_of	hexokinase 1	16760983	CHEBI:4139	PathWhiz.ProteinComplex:103	false
+benzamidine	biolink:decreases_amount_or_activity_of	hexokinase 1	11151026	CHEBI:41033	PathWhiz.ProteinComplex:103	false
+4-aminobenzamidine	biolink:decreases_amount_or_activity_of	hexokinase 1	11151026	UNII:63GK9KT599	PathWhiz.ProteinComplex:103	false
+Sodium	biolink:decreases_amount_or_activity_of	hexokinase 1	15558947	CHEBI:26708	PathWhiz.ProteinComplex:103	false
+Calcium	biolink:decreases_amount_or_activity_of	hexokinase 1	15558947	CHEBI:22984	PathWhiz.ProteinComplex:103	true
+Potassium	biolink:decreases_amount_or_activity_of	hexokinase 1	15558947	CHEBI:26216	PathWhiz.ProteinComplex:103	false
+Magnesium	biolink:decreases_amount_or_activity_of	hexokinase 1	15558947	CHEBI:6636	PathWhiz.ProteinComplex:103	false
+Mannoheptulose	biolink:decreases_amount_or_activity_of	hexokinase 1	10680171	CHEBI:78363	PathWhiz.ProteinComplex:103	true
+Glucosamine	biolink:decreases_amount_or_activity_of	hexokinase 1	10680171	CHEBI:47977	PathWhiz.ProteinComplex:103	true
+Fructose	biolink:decreases_amount_or_activity_of	hexokinase 1	8917466	CHEBI:28757	PathWhiz.ProteinComplex:103	true
+Tamoxifen	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	22846226	CHEBI:41774	MESH:C080813	false
+rosmarinic acid	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	12511421	CHEBI:50371	MESH:C080813	false
+Pemetrexed	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	26181204	CHEBI:63616	MESH:C080813	false
+mortalin	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	26960973	UMLS:C0214599	MESH:C080813	false
+Methenamine	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	24086398	CHEBI:6824	MESH:C080813	false
+Metformin	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	24553122	CHEBI:6801	MESH:C080813	false
+Kaempferol	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	26181204	CHEBI:28499	MESH:C080813	false
+Doxorubicin	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	22846226	CHEBI:28748	MESH:C080813	false
+thymoquinone	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	25164250	CHEBI:113532	MESH:C080813	false
+Tyrosine	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	17420479	CHEBI:17895	MESH:C080813	false
+R factor	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	176379	UMLS:C0602449	MESH:C080813	false
+Bleomycin	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	27471572	CHEBI:3139	MESH:C080813	false
+Cytostatic Agents	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	22659843	UMLS:C0010858	MESH:C080813	false
+Ribonucleic acid	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	23992744	CHEBI:33697	MESH:C080813	false
+Carcinogen	biolink:increases_amount_or_activity_of	Il2-inducible t-cell kinase	29743296	NCIT:C347	MESH:C080813	false
+Fluorouracil	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	29048661	CHEBI:46345	MESH:C080813	false
+Resveratrol	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	25884904	CHEBI:45713	MESH:C080813	false
+Su6668	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	23984913	UMLS:C0970963	MESH:C080813	false
+MicroRNAs [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	28337746	UMLS:C1101610	MESH:C080813	false
+MicroRNAs [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	21403400	UMLS:C1101610	MESH:C080813	false
+MicroRNAs [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	26265694	UMLS:C1101610	MESH:C080813	false
+Absolute Genomic Position	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	16682193	UMLS:C4085934	MESH:C080813	false
+Absolute Genomic Position	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	16481166	UMLS:C4085934	MESH:C080813	false
+Immunomodulators	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	23886836	UMLS:C1527392	MESH:C080813	true
+honokiol	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	23662112	CHEBI:5759	MESH:C080813	false
+Deguelin	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	28509438	CHEBI:4357	MESH:C080813	false
+2-aminobenzimidazole	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	18930400	CHEBI:27822	MESH:C080813	true
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	25746720	UMLS:C1099354	MESH:C080813	false
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	29738069	UMLS:C1099354	MESH:C080813	false
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	20108770	UMLS:C1099354	MESH:C080813	true
+RNA, Small Interfering [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	29221135	UMLS:C1099354	MESH:C080813	false
+Kaempferol	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	26181204	CHEBI:28499	MESH:C080813	false
+Propionic acid	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	15694455	CHEBI:30768	MESH:C080813	false
+Indole	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	22464456	CHEBI:16881	MESH:C080813	false
+fucoidan	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	26404322	CHEBI:5181	MESH:C080813	false
+oridonin	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	27878247	CHEBI:138236	MESH:C080813	false
+oridonin	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	27453691	CHEBI:138236	MESH:C080813	false
+Antisense oligonucleotide	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	25694039	CHEBI:76720	MESH:C080813	false
+Stilbenes [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	18930400	CHEBI:26776	MESH:C080813	true
+Benzimidazoles [Chemical/Ingredient]	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	17499505	CHEBI:22715	MESH:C080813	true
+Acriflavine	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	27987431	CHEBI:74729	MESH:C080813	false
+Glycine	biolink:decreases_amount_or_activity_of	Il2-inducible t-cell kinase	21138328	CHEBI:15428	MESH:C080813	false
