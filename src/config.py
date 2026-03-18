@@ -8,7 +8,6 @@ load_dotenv()
 
 
 DEFAULT_VLLM_MODELS = [
-    "hermes4-vllm",
     "gpt-oss-20b-vllm",
     "gpt-oss-120b-vllm",
 ]

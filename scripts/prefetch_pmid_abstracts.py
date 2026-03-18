@@ -135,29 +135,42 @@ class AsyncPMIDFetcher:
         return stats
 
 
+def normalize_pmid(raw: str) -> str:
+    """Strip the 'PMID:' prefix (if present) so we get a bare numeric ID
+    compatible with the NCBI API and the local cache."""
+    raw = raw.strip()
+    if raw.upper().startswith("PMID:"):
+        return raw[5:]
+    return raw
+
+
 def load_pmids_from_tsv(tsv_path: str) -> Set[str]:
-    """Load unique PMIDs from the TSV file."""
+    """Load unique PMIDs from the TSV file.
+
+    Handles both bare numeric IDs (e.g. '12345678') and CURIE-style
+    identifiers (e.g. 'PMID:12345678').  Only the PMID column is read
+    via Polars lazy scanning to keep memory usage low on large files.
+    """
     logger.info(f"Loading PMIDs from {tsv_path}...")
-    
+
     try:
-        df = pl.read_csv(tsv_path, separator='\t', infer_schema_length=0)
-        
-        if 'PMID' not in df.columns:
-            raise ValueError("TSV file does not contain a 'PMID' column")
-        
-        pmids = set(
-            df['PMID']
-            .drop_nulls()
-            .cast(pl.Utf8)
+        unique_pmids = (
+            pl.scan_csv(tsv_path, separator='\t', infer_schema_length=0)
+            .select(pl.col('PMID'))
             .unique()
-            .to_list()
+            .collect()
         )
-        
-        pmids = {pmid for pmid in pmids if pmid.strip()}
-        
+
+        raw_pmids = unique_pmids['PMID'].drop_nulls().to_list()
+        pmids = {normalize_pmid(p) for p in raw_pmids if p.strip()}
+
         logger.info(f"Found {len(pmids)} unique PMIDs in the file")
         return pmids
-        
+
+    except pl.exceptions.SchemaError:
+        raise ValueError(
+            "TSV file does not contain a 'PMID' column"
+        )
     except Exception as e:
         logger.error(f"Error loading PMIDs from TSV: {e}")
         raise
@@ -172,8 +185,8 @@ async def main():
     
     parser.add_argument(
         '--tsv-file',
-        default='data/andy_team_data/processed_mediK_results_v2.tsv',
-        help='Path to the TSV file containing PMIDs (default: data/andy_team_data/processed_mediK_results_v2.tsv)'
+        default='data/semmeddb_data/semmeddb_edges_extracted_kg2.10.3.tsv',
+        help='Path to the TSV file containing PMIDs (default: data/semmeddb_data/semmeddb_edges_extracted_kg2.10.3.tsv)'
     )
     parser.add_argument('--batch-size', type=int, default=100,
                         help='Number of PMIDs to fetch per batch (default: 100)')

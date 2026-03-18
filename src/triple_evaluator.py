@@ -83,7 +83,7 @@ class TripleEvaluatorSystem:
         """Initialize the triple evaluation system.
 
         Args:
-            llm_provider: LLM provider for Round 1 (e.g., 'hermes4', 'gpt-oss', model name).
+            llm_provider: LLM provider for Round 1 (e.g., 'gpt-oss-20b-vllm', model name).
             round2_model: Optional model for Round 2 re-evaluation. If None, Round 2 is skipped.
         """
         self.pmid_extractor = PMIDExtractor(
@@ -111,9 +111,6 @@ class TripleEvaluatorSystem:
         pmids: List[str] = None,
         subject_info: dict = None,
         object_info: dict = None,
-        qualified_predicate: str = None,
-        qualified_object_aspect: str = None,
-        qualified_object_direction: str = None,
     ) -> TripleEvaluationResult:
         """Evaluate a research triple against a list of PMIDs.
 
@@ -126,9 +123,6 @@ class TripleEvaluatorSystem:
             pmids: List of PubMed identifiers
             subject_info: Optional dict with name, category, description from node_dict
             object_info: Optional dict with name, category, description from node_dict
-            qualified_predicate: Optional qualified predicate
-            qualified_object_aspect: Optional aspect qualifier
-            qualified_object_direction: Optional direction qualifier
 
         Returns:
             TripleEvaluationResult with evaluation for each PMID
@@ -146,9 +140,6 @@ class TripleEvaluatorSystem:
             object_names=object_names or [object_],
             subject_info=subject_info,
             object_info=object_info,
-            qualified_predicate=qualified_predicate,
-            qualified_object_aspect=qualified_object_aspect,
-            qualified_object_direction=qualified_object_direction,
         )
 
         logger.info(f"Subject equivalent names: {triple.subject_names}")
@@ -157,12 +148,6 @@ class TripleEvaluatorSystem:
             logger.info(f"Subject info: {triple.subject_info.get('name', 'N/A')}")
         if triple.object_info:
             logger.info(f"Object info: {triple.object_info.get('name', 'N/A')}")
-        if triple.has_qualifiers():
-            logger.info(
-                f"Qualifiers - predicate: {triple.qualified_predicate}, "
-                f"aspect: {triple.qualified_object_aspect}, "
-                f"direction: {triple.qualified_object_direction}"
-            )
 
         # Step 1: Extract abstracts from PMIDs
         logger.info("Extracting abstracts from PMIDs...")

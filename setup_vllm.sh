@@ -4,9 +4,6 @@
 #
 # Supports multiple models via environment variables:
 #
-#   # Hermes 4 70B (default)
-#   bash setup_vllm.sh
-#
 #   # GPT-OSS 20B
 #   VLLM_MODEL=openai/gpt-oss-20b VLLM_MODEL_NAME=gpt-oss-20b-vllm VLLM_GPU=0 VLLM_PORT=8001 bash setup_vllm.sh
 #
@@ -19,8 +16,8 @@ set -e
 # Configuration
 # ============================================================
 VLLM_PORT=${VLLM_PORT:-8000}
-VLLM_GPU=${VLLM_GPU:-3}
-MODEL_ID=${VLLM_MODEL:-"cyankiwi/Hermes-4-70B-AWQ-4bit"}
+VLLM_GPU=${VLLM_GPU:-0}
+MODEL_ID=${VLLM_MODEL:-"openai/gpt-oss-20b"}
 
 # Auto-derive served model name from HuggingFace repo if not set explicitly
 if [ -n "$VLLM_MODEL_NAME" ]; then
@@ -29,8 +26,6 @@ elif [[ "$MODEL_ID" == *"gpt-oss-20b"* ]]; then
     MODEL_NAME="gpt-oss-20b-vllm"
 elif [[ "$MODEL_ID" == *"gpt-oss-120b"* ]]; then
     MODEL_NAME="gpt-oss-120b-vllm"
-elif [[ "$MODEL_ID" == *"Hermes-4"* ]] || [[ "$MODEL_ID" == *"hermes4"* ]]; then
-    MODEL_NAME="hermes4-vllm"
 else
     # Fallback: use last part of repo id, lowercased, with slashes replaced
     MODEL_NAME=$(echo "$MODEL_ID" | sed 's|.*/||' | tr '[:upper:]' '[:lower:]')"-vllm"
@@ -199,9 +194,10 @@ echo "PID:     $VLLM_PID"
 echo ""
 echo "To run evaluation:"
 echo "  python main.py \\"
-echo "      --input data/test_data.tsv \\"
+echo "      --input data/test_data_biolink.tsv \\"
 echo "      --output results.db \\"
 echo "      --val_model $MODEL_NAME \\"
+echo "      --predicate_file data/biolink_data/biolink_predicates.tsv \\"
 echo "      --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz \\"
 echo "      --max_concurrent 24"
 echo ""
@@ -212,17 +208,15 @@ echo "Environment variables to customize:"
 echo "  VLLM_MODEL=<hf_repo>         # HuggingFace model repo"
 echo "  VLLM_MODEL_NAME=<name>       # Served model name (auto-derived if not set)"
 echo "  VLLM_PORT=8000               # API port"
-echo "  VLLM_GPU=3                   # GPU device index"
+echo "  VLLM_GPU=0                   # GPU device index"
 echo "  VLLM_MAX_MODEL_LEN=4096      # Max sequence length"
 echo "  VLLM_MAX_NUM_SEQS=24         # Max concurrent sequences"
 echo "  VLLM_GPU_MEM=0.95            # GPU memory utilization (0-1)"
 echo ""
 echo "Examples:"
-echo "  # Hermes 4 70B"
-echo "  VLLM_MODEL=cyankiwi/Hermes-4-70B-AWQ-4bit VLLM_MODEL_NAME=hermes4-vllm VLLM_GPU=0 VLLM_PORT=8000 bash setup_vllm.sh"
 echo ""
 echo "  # GPT-OSS 20B"
 echo "  VLLM_MODEL=openai/gpt-oss-20b VLLM_MODEL_NAME=gpt-oss-20b-vllm VLLM_GPU=0 VLLM_PORT=8001 bash setup_vllm.sh"
 echo ""
 echo "  # GPT-OSS 120B"
-echo "  VLLM_MODEL=openai/gpt-oss-120b VLLM_MODEL_NAME=gpt-oss-120b-vllm VLLM_GPU=0 VLLM_PORT=8002 bash setup_vllm.sh"
+echo "  VLLM_MODEL=openai/gpt-oss-120b VLLM_MODEL_NAME=gpt-oss-120b-vllm VLLM_GPU=1 VLLM_PORT=8002 bash setup_vllm.sh"

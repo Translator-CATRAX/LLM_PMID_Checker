@@ -1,24 +1,22 @@
 #!/bin/bash
 
 # Batch evaluation script for vLLM-served models
-# Processes all rows from test_data.tsv using vLLM backend
 #
 # Prerequisites: Start the required vLLM server(s) first:
-#   bash setup_vllm.sh                                                      # Hermes 4 on GPU 3, port 8000
 #   VLLM_MODEL=openai/gpt-oss-20b VLLM_GPU=0 VLLM_PORT=8001 bash setup_vllm.sh   # GPT-OSS 20B
 #   VLLM_MODEL=openai/gpt-oss-120b VLLM_GPU=1 VLLM_PORT=8002 bash setup_vllm.sh  # GPT-OSS 120B
 #
 # Configurations (uncomment ONE block):
 #
-# --- Config A: Hermes 4 only (single round) ---
-# VAL_MODEL="hermes4-vllm"
-# ROUND2_MODEL=""
-# OUTPUT_FILE="$BASE_DIR/evaluation/hermes4_vllm_results.db"
-#
-# --- Config B: GPT-OSS 20B only (single round) ---
+# --- Config A: GPT-OSS 20B only (single round) ---
 # VAL_MODEL="gpt-oss-20b-vllm"
 # ROUND2_MODEL=""
 # OUTPUT_FILE="$BASE_DIR/evaluation/gptoss20b_vllm_results.db"
+#
+# --- Config B: GPT-OSS 120B only (single round, default) ---
+# VAL_MODEL="gpt-oss-120b-vllm"
+# ROUND2_MODEL=""
+# OUTPUT_FILE="$BASE_DIR/evaluation/gptoss120b_vllm_results.db"
 #
 # --- Config C: GPT-OSS 20B (R1) + 120B (R2) two-round ---
 # VAL_MODEL="gpt-oss-20b-vllm"
@@ -27,12 +25,13 @@
 
 # Set base directory
 BASE_DIR="/home/grads/cqm5886/work/LLM_PMID_Checker"
-INPUT_FILE="$BASE_DIR/data/test_data.tsv"
-OUTPUT_FILE="${OUTPUT_FILE:-$BASE_DIR/evaluation/gptoss120b_vllm_results.db}"
+INPUT_FILE="$BASE_DIR/data/test_data_biolink.tsv"
+OUTPUT_FILE="${OUTPUT_FILE:-$BASE_DIR/evaluation/gptoss_120b_r1_evaluation_only_results.tsv}"
 VAL_MODEL="${VAL_MODEL:-gpt-oss-120b-vllm}"
 ROUND2_MODEL="${ROUND2_MODEL:}"
 NODE_DICT="$BASE_DIR/data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz"
-MAX_CONCURRENT=24
+PREDICATE_FILE="$BASE_DIR/data/biolink_data/biolink_predicates.tsv"
+MAX_CONCURRENT=30
 
 echo "========================================"
 echo "Running evaluation with vLLM model"
@@ -49,6 +48,11 @@ if [ -n "$NODE_DICT" ]; then
     echo "Node Dict: $NODE_DICT"
 else
     echo "Node Dict: disabled"
+fi
+if [ -n "$PREDICATE_FILE" ]; then
+    echo "Predicate File: $PREDICATE_FILE"
+else
+    echo "Predicate File: disabled"
 fi
 echo "Max Concurrent: $MAX_CONCURRENT"
 echo "========================================"
@@ -79,6 +83,11 @@ fi
 # Add node_dict if specified
 if [ -n "$NODE_DICT" ]; then
     cmd="$cmd --node_dict \"$NODE_DICT\""
+fi
+
+# Add predicate file if specified
+if [ -n "$PREDICATE_FILE" ]; then
+    cmd="$cmd --predicate_file \"$PREDICATE_FILE\""
 fi
 
 # Run batch evaluation

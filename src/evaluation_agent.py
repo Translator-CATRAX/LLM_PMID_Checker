@@ -32,49 +32,14 @@ class TripleData:
     object_names: List[str] = None
     subject_info: Optional[dict] = None
     object_info: Optional[dict] = None
-    qualified_predicate: Optional[str] = None
-    qualified_object_aspect: Optional[str] = None
-    qualified_object_direction: Optional[str] = None
 
     def __post_init__(self):
         if self.subject_names is None:
             self.subject_names = [self.subject]
         if self.object_names is None:
             self.object_names = [self.object]
-        self._validate_qualifiers()
-
-    def _validate_qualifiers(self):
-        has_any_qualifier = any([
-            self.qualified_predicate,
-            self.qualified_object_aspect,
-            self.qualified_object_direction,
-        ])
-        if has_any_qualifier:
-            if not self.qualified_predicate:
-                raise ValueError(
-                    "qualified_predicate is required when using qualifiers"
-                )
-            if not self.qualified_object_aspect and not self.qualified_object_direction:
-                raise ValueError(
-                    "At least one of qualified_object_aspect or "
-                    "qualified_object_direction must be provided when using qualifiers"
-                )
-
-    def has_qualifiers(self) -> bool:
-        return bool(self.qualified_predicate)
 
     def to_string(self) -> str:
-        if self.has_qualifiers():
-            parts = []
-            if self.qualified_object_direction:
-                parts.append(self.qualified_object_direction)
-            if self.qualified_object_aspect:
-                parts.append(self.qualified_object_aspect)
-            qualified_desc = " ".join(parts)
-            return (
-                f"'{self.subject}' {self.qualified_predicate} "
-                f"{qualified_desc} of '{self.object}'"
-            )
         return f"'{self.subject}' {self.predicate} '{self.object}'"
 
 

@@ -20,7 +20,7 @@ class VLLMClient:
 
     def __init__(self, model: str = None, base_url: str = None):
         if model is None:
-            model = "hermes4-vllm"
+            model = settings.default_model or "gpt-oss-20b-vllm"
 
         self.model = model
         self.base_url = (base_url or settings.vllm_base_url).rstrip('/')

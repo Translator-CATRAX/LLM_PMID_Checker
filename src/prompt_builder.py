@@ -4,10 +4,50 @@ Builds evaluation prompts based on the test/LLM_validator.py style
 (yes/no/maybe + supporting sentences) with equivalent names and
 optional entity info from node_dict.
 """
+import csv
+import logging
+from pathlib import Path
 from typing import List, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .evaluation_agent import TripleData
+
+logger = logging.getLogger(__name__)
+
+_predicate_descriptions: dict[str, str] = {}
+
+
+def load_predicate_descriptions(tsv_path: str) -> None:
+    """Load predicate descriptions from a TSV file.
+
+    Must be called before building prompts if predicate definitions
+    are desired.  The TSV must have columns ``predicate`` and
+    ``description``.
+    """
+    global _predicate_descriptions
+    path = Path(tsv_path)
+    if not path.exists():
+        logger.warning("Predicate descriptions file not found: %s", path)
+        _predicate_descriptions = {}
+        return
+    mapping: dict[str, str] = {}
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            mapping[row["predicate"]] = row.get("description", "")
+    _predicate_descriptions = mapping
+    logger.info("Loaded %d predicate descriptions from %s", len(mapping), path)
+
+
+def get_predicate_description(predicate: str) -> str:
+    """Look up the biolink description for a predicate.
+
+    Handles both bare names ('treats') and prefixed ('biolink:treats').
+    """
+    if predicate in _predicate_descriptions:
+        return _predicate_descriptions[predicate]
+    canonical = "biolink:" + predicate.replace(" ", "_")
+    return _predicate_descriptions.get(canonical, "")
 
 
 def get_matching_rules() -> str:
@@ -18,11 +58,12 @@ def get_matching_rules() -> str:
         "   - You MAY use your knowledge to recognize common abbreviations and variants "
         "of the equivalent names (e.g., 'AAA' from 'AAA gene/protein')\n"
         "   - BUT any alternative name you use MUST be clearly related to names in the provided list\n"
-        "2. **Relationship Matching**: Match by semantic meaning:\n"
-        "   - 'inhibits' = 'suppresses' = 'reduces' = 'blocks' = 'decreases activity/expression/abundance'\n"
-        "   - 'activates' = 'stimulates' = 'promotes' = 'increases' = 'upregulates' = 'enhances' "
-        "= 'increases activity/expression/abundance'\n"
-        "   - 'expression', 'abundance', and 'levels' are interchangeable\n\n"
+        "2. **Relationship Matching**: Match the predicate by its semantic meaning "
+        "as defined in the PREDICATE DEFINITION section above\n"
+        "   - Accept semantically equivalent expressions (synonyms, paraphrases) "
+        "that convey the same relationship\n"
+        "   - Reject relationships that are similar but semantically distinct "
+        "from the defined predicate\n\n"
         "**CRITICAL REQUIREMENTS**:\n"
         "• Relationship MUST be between the SUBJECT and OBJECT from the triple\n"
         "• Do NOT confuse relationships involving other entities\n"
@@ -47,10 +88,6 @@ def _extract_triple_info(triple: Union[List[str], 'TripleData']) -> dict:
             'object_names': getattr(triple, 'object_names', None) or [triple.object],
             'subject_info': getattr(triple, 'subject_info', None),
             'object_info': getattr(triple, 'object_info', None),
-            'qualified_predicate': getattr(triple, 'qualified_predicate', None),
-            'qualified_object_aspect': getattr(triple, 'qualified_object_aspect', None),
-            'qualified_object_direction': getattr(triple, 'qualified_object_direction', None),
-            'has_qualifiers': getattr(triple, 'has_qualifiers', lambda: False)(),
         }
     else:
         return {
@@ -61,27 +98,19 @@ def _extract_triple_info(triple: Union[List[str], 'TripleData']) -> dict:
             'object_names': [triple[2]],
             'subject_info': None,
             'object_info': None,
-            'qualified_predicate': None,
-            'qualified_object_aspect': None,
-            'qualified_object_direction': None,
-            'has_qualifiers': False,
         }
 
 
+def _strip_biolink_prefix(predicate: str) -> str:
+    """Strip 'biolink:' prefix and convert underscores to spaces."""
+    name = predicate.removeprefix("biolink:")
+    return name.replace("_", " ")
+
+
 def _build_triple_description(info: dict) -> str:
-    """Build the triple description string, with qualifiers if present."""
-    if info['has_qualifiers']:
-        parts = []
-        if info['qualified_object_direction']:
-            parts.append(info['qualified_object_direction'])
-        if info['qualified_object_aspect']:
-            parts.append(info['qualified_object_aspect'])
-        qualified_desc = " ".join(parts)
-        return (
-            f"'{info['subject']}' {info['qualified_predicate']} "
-            f"{qualified_desc} of '{info['object']}'"
-        )
-    return f"'{info['subject']}' {info['predicate']} '{info['object']}'"
+    """Build the triple description string."""
+    predicate = _strip_biolink_prefix(info['predicate'])
+    return f"'{info['subject']}' {predicate} '{info['object']}'"
 
 
 def _build_entity_section(
@@ -108,49 +137,6 @@ def _build_entity_section(
     )
     for i, n in enumerate(equiv_names, 1):
         section += f"  {i}. {n}\n"
-
-    return section
-
-
-def _build_qualifier_section(info: dict) -> str:
-    """Build qualifier guidance if qualifiers are present."""
-    if not info['has_qualifiers']:
-        return ""
-
-    qp = info['qualified_predicate']
-    qd = info['qualified_object_direction']
-    qa = info['qualified_object_aspect']
-
-    section = (
-        f"\n**QUALIFIERS TO CHECK**:\n"
-        f"- Predicate: {qp}\n"
-        f"- Direction: {qd or 'any'}\n"
-        f"- Aspect: {qa or 'any'}\n\n"
-        f"**QUALIFIER MATCHING**:\n"
-    )
-
-    if qd:
-        if qd == 'increased':
-            examples = 'increases/activates/upregulates'
-        elif qd == 'decreased':
-            examples = 'decreases/inhibits/downregulates'
-        else:
-            examples = qd
-        section += (
-            f"• Direction '{qd}': Abstract must show {qd} effect "
-            f"(e.g., {examples})\n"
-        )
-
-    if qa == 'activity_or_abundance':
-        section += (
-            "• Aspect 'activity_or_abundance': Abstract can mention "
-            "activity OR abundance OR both\n"
-        )
-
-    section += (
-        "• Match semantic meaning: 'inhibitor' = 'causes decreased activity', "
-        "'upregulates expression' = 'causes increased abundance'\n\n"
-    )
 
     return section
 
@@ -187,6 +173,18 @@ def _get_output_format() -> str:
     )
 
 
+def _build_predicate_section(predicate: str) -> str:
+    """Build the predicate definition section from the biolink descriptions."""
+    desc = get_predicate_description(predicate)
+    if not desc:
+        return ""
+    display_name = _strip_biolink_prefix(predicate)
+    return (
+        f"**PREDICATE DEFINITION** ({display_name}):\n"
+        f"{desc}\n\n"
+    )
+
+
 def build_evaluation_prompt(
     triple: Union[List[str], 'TripleData'],
     abstract: str,
@@ -208,7 +206,7 @@ def build_evaluation_prompt(
         f"**TRIPLE**: {_build_triple_description(info)}\n\n"
         f"{_build_entity_section('Subject', info['subject'], info['subject_info'], info['subject_names'])}\n"
         f"{_build_entity_section('Object', info['object'], info['object_info'], info['object_names'])}\n"
-        f"{_build_qualifier_section(info)}"
+        f"{_build_predicate_section(info['predicate'])}"
         f"**ABSTRACT**:\n{abstract}\n\n"
         f"{get_matching_rules()}"
         f"{_get_instructions()}"
