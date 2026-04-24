@@ -15,10 +15,20 @@ import polars as pl
 
 from src.triple_evaluator import TripleEvaluatorSystem
 from src.node_dict_loader import NodeDictLoader
+from src.pmid_cache import PMIDCache
 from src.config import settings
 from src import prompt_builder
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_pmid(raw: str) -> str:
+    """Strip 'PMID:' prefix to get the bare numeric ID used by the cache."""
+    raw = raw.strip()
+    if raw.upper().startswith("PMID:"):
+        return raw[5:]
+    return raw
+
 
 OUTPUT_COLUMNS = [
     'predicted', 'support', 'subject_mentioned', 'object_mentioned',
@@ -75,6 +85,112 @@ def _write_to_sqlite(df: pl.DataFrame, db_path: str, table_name: str) -> None:
 def _write_to_tsv(df: pl.DataFrame, output_path: str) -> None:
     """Write a Polars DataFrame to a TSV file."""
     df.write_csv(output_path, separator='\t')
+
+
+# ---------------------------------------------------------------------------
+# Resume helpers
+# ---------------------------------------------------------------------------
+
+_ROW_KEY_COLS = ('subject_curie', 'predicate', 'object_curie', 'PMID')
+
+
+def _row_key(row: dict) -> tuple:
+    return tuple(str(row.get(c, '')) for c in _ROW_KEY_COLS)
+
+
+def _load_completed_keys(output_path: str, out_fmt: str,
+                         table_name: str) -> set[tuple]:
+    """Load the set of already-evaluated row keys from the output file."""
+    p = Path(output_path)
+    if not p.exists():
+        return set()
+
+    try:
+        if out_fmt == 'tsv':
+            df = pl.read_csv(output_path, separator='\t', infer_schema_length=0)
+        else:
+            conn = sqlite3.connect(output_path)
+            tables = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()]
+            if table_name not in tables:
+                conn.close()
+                return set()
+            df = pl.read_database(
+                f'SELECT * FROM "{table_name}"', conn
+            )
+            conn.close()
+
+        if not all(c in df.columns for c in _ROW_KEY_COLS):
+            return set()
+
+        keys = set()
+        for row in df.select(list(_ROW_KEY_COLS)).iter_rows(named=True):
+            keys.add(_row_key(row))
+        return keys
+    except Exception as e:
+        print(f"Warning: could not load existing output for resume: {e}")
+        return set()
+
+
+class IncrementalWriter:
+    """Writes evaluation results one row at a time so progress survives
+    interruption.  Thread-safe via an asyncio.Lock."""
+
+    def __init__(self, output_path: str, out_fmt: str, table_name: str,
+                 columns: list[str], *, is_resume: bool):
+        self.output_path = output_path
+        self.out_fmt = out_fmt
+        self.table_name = table_name
+        self.columns = columns
+        self.lock = asyncio.Lock()
+        self.rows_written = 0
+
+        if out_fmt == 'tsv':
+            if is_resume and Path(output_path).exists():
+                self._tsv_fh = open(output_path, 'a', newline='',
+                                    encoding='utf-8')
+            else:
+                self._tsv_fh = open(output_path, 'w', newline='',
+                                    encoding='utf-8')
+                self._tsv_fh.write('\t'.join(columns) + '\n')
+                self._tsv_fh.flush()
+        else:
+            self._db_conn = sqlite3.connect(output_path)
+            self._db_conn.execute("PRAGMA journal_mode=WAL")
+            if not is_resume:
+                col_defs = ', '.join(f'"{c}" TEXT' for c in columns)
+                self._db_conn.execute(
+                    f'DROP TABLE IF EXISTS "{table_name}"')
+                self._db_conn.execute(
+                    f'CREATE TABLE IF NOT EXISTS "{table_name}" ({col_defs})')
+                self._db_conn.commit()
+            self._db_placeholders = ', '.join('?' for _ in columns)
+
+    async def write_row(self, combined: dict):
+        """Write one result row.  Called from async evaluation tasks."""
+        async with self.lock:
+            vals = [str(combined.get(c, '')) for c in self.columns]
+            if self.out_fmt == 'tsv':
+                self._tsv_fh.write('\t'.join(vals) + '\n')
+                if self.rows_written % 50 == 0:
+                    self._tsv_fh.flush()
+            else:
+                self._db_conn.execute(
+                    f'INSERT INTO "{self.table_name}" '
+                    f'VALUES ({self._db_placeholders})', vals)
+                if self.rows_written % 50 == 0:
+                    self._db_conn.commit()
+            self.rows_written += 1
+
+    def finalize(self):
+        """Flush and close the output handle."""
+        if self.out_fmt == 'tsv':
+            self._tsv_fh.flush()
+            self._tsv_fh.close()
+        else:
+            self._db_conn.commit()
+            self._db_conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -346,14 +462,24 @@ async def evaluate_single_row(evaluator, row: dict, row_idx: int,
         subject_info = node_dict.get_node_info(subject_curie) if node_dict else None
         object_info = node_dict.get_node_info(object_curie) if node_dict else None
 
+        subject_names = [subject]
+        object_names = [object_]
+        if node_dict:
+            sn = node_dict.get_all_names(subject_curie)
+            if sn:
+                subject_names = sn
+            on = node_dict.get_all_names(object_curie)
+            if on:
+                object_names = on
+
         start = time.time()
 
         result = await evaluator.evaluate_triple_with_names(
             subject=subject,
             predicate=predicate,
             object_=object_,
-            subject_names=[subject],
-            object_names=[object_],
+            subject_names=subject_names,
+            object_names=object_names,
             pmids=[pmid],
             subject_info=subject_info,
             object_info=object_info,
@@ -400,9 +526,12 @@ def _error_output(reasoning: str, runtime: float) -> dict:
 async def run_batch(input_file: str, db_path: str, val_model: str, *,
                     table_name: str = "evaluations",
                     round2_model: str = None, node_dict_path: str = None,
+                    names_file: str = None,
                     max_concurrent: int = None,
-                    predicate_file: str = None):
-    """Read a TSV, evaluate every row concurrently, and write to SQLite."""
+                    predicate_file: str = None,
+                    overwrite: bool = False):
+    """Read a TSV, evaluate every row concurrently, and write results
+    incrementally so the run can be stopped and resumed at any time."""
     if predicate_file:
         prompt_builder.load_predicate_descriptions(predicate_file)
     original_max = settings.max_concurrent_requests
@@ -426,16 +555,36 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
         df = df.rename({'Supported': 'ground_truth'})
 
     df = df.drop_nulls(subset=list(required_cols))
-    total_rows = df.height
+    input_total = df.height
     out_fmt = _detect_output_format(db_path)
 
-    print(f"Input file:  {input_file}  ({total_rows} rows)")
+    print(f"Input file:  {input_file}  ({input_total:,} rows)")
     print(f"Model:       {val_model}")
     print(f"Round 2:     {round2_model or 'disabled'}")
     if out_fmt == 'db':
         print(f"Output DB:   {db_path}  (table: {table_name})")
     else:
         print(f"Output TSV:  {db_path}")
+
+    # ---- resume: detect already-evaluated rows -----------------------
+    is_resume = False
+    completed_keys: set[tuple] = set()
+    if not overwrite:
+        completed_keys = _load_completed_keys(db_path, out_fmt, table_name)
+    if completed_keys:
+        is_resume = True
+        before = df.height
+        pending_mask = pl.Series(
+            "_pending",
+            [_row_key(row) not in completed_keys for row in df.iter_rows(named=True)]
+        )
+        df = df.filter(pending_mask)
+        print(f"Resume: {len(completed_keys):,} rows already done, "
+              f"{df.height:,} remaining")
+    else:
+        if overwrite and Path(db_path).exists():
+            Path(db_path).unlink()
+            print("Overwrite: removed existing output file")
 
     # ---- optional node_dict ------------------------------------------
     node_dict = None
@@ -447,76 +596,140 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
         print(f"Loading node_dict for {len(all_curies)} CURIEs from: {node_dict_path}")
         node_dict = NodeDictLoader.from_file(node_dict_path, target_curies=all_curies)
         print(f"  Loaded info for {len(node_dict)} CURIEs")
+        if names_file:
+            node_dict.merge_all_names_tsv(names_file)
+            print(f"  Merged all_names from: {names_file}")
 
+    # ---- filter out rows with no valid abstract in cache ---------------
+    cache = PMIDCache()
+    print(f"Checking PMID abstracts in cache ({cache.count():,} cached)...")
+
+    raw_pmids = df['PMID'].to_list()
+    bare_pmids = [_normalize_pmid(str(p)) for p in raw_pmids]
+    cached_valid = cache.get_all_cached_pmids()
+
+    has_abstract = [bp in cached_valid for bp in bare_pmids]
+    has_abstract_series = pl.Series("_has_abstract", has_abstract)
+
+    df_valid = df.filter(has_abstract_series)
+    df_skipped = df.filter(~has_abstract_series)
+
+    if df_skipped.height > 0:
+        no_abs_path = Path(db_path).with_name(
+            Path(db_path).stem + "_no_abstract.tsv"
+        )
+        df_skipped.write_csv(no_abs_path, separator="\t")
+        print(f"Skipped {df_skipped.height:,} rows (no valid abstract) -> {no_abs_path}")
+
+    df = df_valid
+    total_rows = df.height
+    print(f"Rows to evaluate this run: {total_rows:,}")
     print("=" * 60)
 
-    # ---- evaluate ----------------------------------------------------
+    if total_rows == 0:
+        print("Nothing to evaluate (all rows done or have no abstract).")
+        return 0
+
+    # ---- prepare incremental writer ----------------------------------
+    input_cols = [c for c in df.columns if c not in OUTPUT_COLUMNS]
+    all_columns = input_cols + OUTPUT_COLUMNS
+
+    writer = IncrementalWriter(
+        db_path, out_fmt, table_name, all_columns, is_resume=is_resume,
+    )
+
+    # ---- evaluate with incremental writes ----------------------------
     evaluator = TripleEvaluatorSystem(
         llm_provider=val_model,
         round2_model=round2_model,
     )
     semaphore = asyncio.Semaphore(concurrency)
-
     rows_as_dicts = df.to_dicts()
+    all_results = []
 
     async def _eval(row, idx):
         async with semaphore:
-            return await evaluate_single_row(evaluator, row, idx, total_rows,
-                                             node_dict)
+            result = await evaluate_single_row(
+                evaluator, row, idx, total_rows, node_dict
+            )
+        combined = {**row, **result}
+        await writer.write_row(combined)
+        return result
 
     overall_start = time.time()
     tasks = [_eval(row, idx) for idx, row in enumerate(rows_as_dicts)]
     print(f"Starting batch evaluation with {concurrency} concurrent workers...")
+    print(f"Results are written incrementally — safe to Ctrl+C and resume.")
     print("=" * 60)
-    results = await asyncio.gather(*tasks)
+
+    try:
+        all_results = await asyncio.gather(*tasks)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print(f"\nInterrupted! {writer.rows_written:,} rows saved.")
+        print("Re-run the same command to resume from where you stopped.")
+    finally:
+        writer.finalize()
+
     total_runtime = time.time() - overall_start
 
-    # ---- merge input columns with output columns ---------------------
-    output_df = pl.DataFrame(results)
-    df = df.hstack(output_df.select(OUTPUT_COLUMNS))
+    # ---- companion files (based on full output) ----------------------
+    # Re-read the full output for timing/metrics (includes resumed rows)
+    try:
+        if out_fmt == 'tsv':
+            df_full = pl.read_csv(db_path, separator='\t', infer_schema_length=0)
+        else:
+            conn = sqlite3.connect(db_path)
+            df_full = pl.read_database(
+                f'SELECT * FROM "{table_name}"', conn)
+            conn.close()
 
-    # ---- write output --------------------------------------------------
-    if out_fmt == 'db':
-        _write_to_sqlite(df, db_path, table_name)
-    else:
-        _write_to_tsv(df, db_path)
+        cpaths = _companion_paths(db_path)
+        _write_timing_files(df_full, total_runtime, concurrency, val_model, cpaths)
+        _write_metrics_files(df_full, cpaths)
+    except Exception as e:
+        print(f"Warning: could not write companion files: {e}")
+        df_full = None
+        cpaths = _companion_paths(db_path)
 
-    # ---- companion files ------------------------------------------------
-    cpaths = _companion_paths(db_path)
+    # ---- console summary ---------------------------------------------
+    newly_done = writer.rows_written
+    total_done = len(completed_keys) + newly_done
 
-    _write_timing_files(df, total_runtime, concurrency, val_model, cpaths)
-    _write_metrics_files(df, cpaths)
-
-    # ---- console summary -------------------------------------------------
     print("\n" + "=" * 60)
     print("Batch evaluation complete!")
     print("=" * 60)
-    print(f"Total time:    {total_runtime:.2f}s  ({total_runtime / 60:.1f} min)")
-    print(f"Avg per row:   {total_runtime / total_rows:.2f}s")
+    print(f"Newly evaluated: {newly_done:,} rows in {total_runtime:.1f}s "
+          f"({total_runtime / 60:.1f} min)")
+    if is_resume:
+        print(f"Previously done: {len(completed_keys):,} rows")
+    print(f"Total evaluated: {total_done:,} / {input_total:,} input rows")
+    if newly_done > 0:
+        print(f"Avg per row:     {total_runtime / newly_done:.2f}s")
     if out_fmt == 'db':
-        print(f"Results in:    {db_path}  (table: {table_name})")
+        print(f"Results in:      {db_path}  (table: {table_name})")
     else:
-        print(f"Results in:    {db_path}")
+        print(f"Results in:      {db_path}")
 
-    support_counts = dict(
-        df['support'].value_counts()
-        .sort('support')
-        .iter_rows()
-    )
-    print(f"\nSupport distribution:")
-    for val in ('yes', 'maybe', 'no'):
-        print(f"  {val}: {support_counts.get(val, 0)}")
+    if df_full is not None and 'support' in df_full.columns:
+        support_counts = dict(
+            df_full['support'].value_counts()
+            .sort('support')
+            .iter_rows()
+        )
+        print(f"\nSupport distribution (all {total_done:,} rows):")
+        for val in ('yes', 'maybe', 'no'):
+            print(f"  {val}: {support_counts.get(val, 0)}")
 
-    if 'ground_truth' in df.columns:
-        _print_metrics(df, total_rows)
+        if 'ground_truth' in df_full.columns:
+            _print_metrics(df_full, df_full.height)
 
-    print(f"\nCompanion files:")
-    print(f"  Timing results:  {cpaths['timing_results']}")
-    print(f"  Timing summary:  {cpaths['timing_json']}")
-    print(f"                   {cpaths['timing_txt']}")
-    if cpaths["metrics_json"].exists():
-        print(f"  Metrics:         {cpaths['metrics_json']}")
-        print(f"                   {cpaths['metrics_txt']}")
+        print(f"\nCompanion files:")
+        print(f"  Timing results:  {cpaths['timing_results']}")
+        print(f"  Timing summary:  {cpaths['timing_json']}")
+        print(f"                   {cpaths['timing_txt']}")
+        if cpaths["metrics_json"].exists():
+            print(f"  Metrics:         {cpaths['metrics_json']}")
+            print(f"                   {cpaths['metrics_txt']}")
 
     if max_concurrent:
         settings.max_concurrent_requests = original_max
@@ -573,11 +786,10 @@ Output format is auto-detected from the --output file extension:
   .tsv / .txt               →  Tab-separated values
 
 Examples:
-  python main.py --input data/test_data_biolink.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz
-  python main.py --input data/test_data_biolink.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz
-  python main.py --input data/test_data_biolink.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz --max_concurrent 16
-  python main.py --input data/test_data_biolink.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz --round2_model gpt-oss-120b-vllm
-  python main.py --input data/test_data_biolink.tsv --output results.db --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz --table my_run_1
+  python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/semmedb_kgx/normalized_nodes.jsonl --names_file data/semmedb_kgx/curie_all_names.tsv
+  python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/semmedb_kgx/normalized_nodes.jsonl --names_file data/semmedb_kgx/curie_all_names.tsv --max_concurrent 16
+  python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/semmedb_kgx/normalized_nodes.jsonl --names_file data/semmedb_kgx/curie_all_names.tsv --round2_model gpt-oss-120b-vllm
+  python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.db --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/semmedb_kgx/normalized_nodes.jsonl --names_file data/semmedb_kgx/curie_all_names.tsv --table my_run_1
         """,
     )
     parser.add_argument('--input', required=True,
@@ -591,11 +803,16 @@ Examples:
     parser.add_argument('--round2_model', default=None,
                         help='Optional Round 2 model for re-evaluation of yes/maybe results')
     parser.add_argument('--node_dict', default=None,
-                        help='Path to KG2 nodes file (.jsonl.gz) or pre-built dict (.json/.json.gz)')
+                        help='Path to nodes file (.jsonl, .jsonl.gz) or pre-built dict (.json/.json.gz)')
+    parser.add_argument('--names_file', default=None,
+                        help='Path to curie_all_names.tsv (columns: curie_id, all_names) '
+                             'to supplement node_dict with richer equivalent names')
     parser.add_argument('--predicate_file', default=None,
                         help='Path to biolink predicates TSV (columns: predicate, description)')
     parser.add_argument('--max_concurrent', type=int, default=None,
                         help=f'Max concurrent requests (default: {settings.max_concurrent_requests})')
+    parser.add_argument('--overwrite', action='store_true',
+                        help='Discard existing output and start fresh (default: auto-resume)')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Enable verbose (DEBUG) logging')
 
@@ -627,8 +844,10 @@ Examples:
         table_name=args.table,
         round2_model=args.round2_model,
         node_dict_path=args.node_dict,
+        names_file=args.names_file,
         max_concurrent=args.max_concurrent,
         predicate_file=args.predicate_file,
+        overwrite=args.overwrite,
     ))
     sys.exit(rc)
 

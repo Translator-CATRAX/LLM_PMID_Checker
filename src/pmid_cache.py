@@ -104,6 +104,8 @@ class PMIDCache:
         
         return None
     
+    _SQL_VAR_LIMIT = 500
+
     def get_many(self, pmids: List[str]) -> Dict[str, CachedAbstract]:
         """Retrieve multiple cached abstracts.
         
@@ -118,27 +120,28 @@ class PMIDCache:
         
         conn = self._get_connection()
         cursor = conn.cursor()
-        
-        # Create placeholders for SQL IN clause
-        placeholders = ','.join('?' * len(pmids))
-        
-        cursor.execute(f"""
-            SELECT pmid, title, abstract, fetch_date, error
-            FROM pmid_abstracts
-            WHERE pmid IN ({placeholders})
-            AND error IS NULL
-            AND abstract IS NOT NULL
-            AND abstract != ''
-        """, pmids)
-        
         results = {}
-        for row in cursor.fetchall():
-            results[row['pmid']] = CachedAbstract(
-                pmid=row['pmid'],
-                title=row['title'],
-                abstract=row['abstract'],
-                fetch_date=row['fetch_date']
-            )
+
+        for i in range(0, len(pmids), self._SQL_VAR_LIMIT):
+            chunk = pmids[i:i + self._SQL_VAR_LIMIT]
+            placeholders = ','.join('?' * len(chunk))
+
+            cursor.execute(f"""
+                SELECT pmid, title, abstract, fetch_date, error
+                FROM pmid_abstracts
+                WHERE pmid IN ({placeholders})
+                AND error IS NULL
+                AND abstract IS NOT NULL
+                AND abstract != ''
+            """, chunk)
+
+            for row in cursor.fetchall():
+                results[row['pmid']] = CachedAbstract(
+                    pmid=row['pmid'],
+                    title=row['title'],
+                    abstract=row['abstract'],
+                    fetch_date=row['fetch_date']
+                )
         
         return results
     
@@ -217,8 +220,21 @@ class PMIDCache:
         cursor.execute("SELECT COUNT(*) FROM pmid_abstracts WHERE error IS NULL")
         return cursor.fetchone()[0]
     
+    def get_all_cached_pmids(self) -> set:
+        """Return the set of all PMIDs stored with a valid abstract."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT pmid FROM pmid_abstracts
+            WHERE error IS NULL AND abstract IS NOT NULL AND abstract != ''
+        """)
+        return {row[0] for row in cursor.fetchall()}
+
     def get_missing_pmids(self, pmids: List[str]) -> List[str]:
         """Get list of PMIDs that are not in the cache.
+        
+        For large inputs this loads all cached PMIDs once rather than
+        issuing thousands of chunked IN-clause queries.
         
         Args:
             pmids: List of PubMed identifiers to check
@@ -226,6 +242,10 @@ class PMIDCache:
         Returns:
             List of PMIDs not found in cache
         """
+        if len(pmids) > self._SQL_VAR_LIMIT:
+            cached_set = self.get_all_cached_pmids()
+            return [p for p in pmids if p not in cached_set]
+
         cached = self.get_many(pmids)
         return [pmid for pmid in pmids if pmid not in cached]
     

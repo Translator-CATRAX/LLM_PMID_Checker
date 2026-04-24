@@ -19,17 +19,41 @@ conda activate llm_pmid_env
 pip install -r requirements.txt
 ```
 
-### 2. Download KG2 Node File for Richer Entity Context during Evaluation (Optional)
+### 2. Prepare SemMedDB KGX Data
+
+Download the SemMedDB KGX dataset from [Translator-CATRAX/SemMedDB-KGX](https://github.com/Translator-CATRAX/SemMedDB-KGX) into `data/semmedb_kgx/`:
 
 ```bash
-mkdir -p data/kg2_data
-wget -P data/kg2_data/ \
-    https://rtx-kg2-public.s3.us-west-2.amazonaws.com/kg2c-2.10.2-v1.0-nodes.jsonl.gz
+cd data/semmedb_kgx
+python download_semmeddb_uncapped.py
 ```
 
-Source: [RTX-KG2 Public Data](https://rtx-kg2-public.s3.us-west-2.amazonaws.com/index.html)
+Then extract the per-PMID edges TSV from the normalized edges JSONL:
 
-### 3. Start vLLM Server(s)
+```bash
+python scripts/extract_semmeddb_edges.py \
+    -i data/semmedb_kgx/normalized_edges.jsonl \
+    -o data/semmedb_kgx/semmeddb_edges_extracted.tsv
+```
+
+This expands each multi-PMID edge into one row per PMID, producing columns: `subject_curie`, `predicate`, `object_curie`, `PMID`, `SemMedDB_sentence`.
+
+### 3. Node File & CURIE Names for Richer Entity Context (Recommended)
+
+The SemMedDB KGX download (step 2) includes `normalized_nodes.jsonl`, which provides entity names, categories, descriptions, and equivalent identifiers for every CURIE. Combined with `curie_all_names.tsv` (produced below), they can provide richer entity context.
+
+```bash
+python scripts/extract_curie_names.py \
+    --input data/semmedb_kgx/semmeddb_edges_extracted.tsv \
+    --output data/semmedb_kgx/curie_all_names.tsv \
+    --batch-size 500 --max-concurrent 10
+```
+
+This queries the [Node Normalization API](https://nodenormalization-sri.renci.org/docs) for all 66,024 unique CURIEs and collects every known name variant (primary label + labels from equivalent identifiers), case-insensitively deduplicated. Runtime: ~5–15 minutes.
+
+
+
+### 4. Start vLLM Server(s)
 
 Use the provided setup script to launch one or more vLLM servers:
 
@@ -41,7 +65,7 @@ VLLM_MODEL=openai/gpt-oss-20b VLLM_MODEL_NAME=gpt-oss-20b-vllm VLLM_GPU=0 VLLM_P
 VLLM_MODEL=openai/gpt-oss-120b VLLM_MODEL_NAME=gpt-oss-120b-vllm VLLM_GPU=1 VLLM_PORT=8002 bash setup_vllm.sh
 ```
 
-### 4. Extract Biolink Predicate Definitions (Optional)
+### 5. Extract Biolink Predicate Definitions (Optional)
 
 If your input uses Biolink predicates (e.g., `biolink:affects`, `biolink:treats_or_applied_or_studied_to_treat`), extract predicate definitions from the Biolink Model YAML to provide the LLM with formal predicate semantics:
 
@@ -53,31 +77,38 @@ python scripts/extract_biolink_predicates.py \
 
 The output TSV has two columns: `predicate` (e.g., `biolink:affects`) and `description`. Pass it to `main.py` via `--predicate_file`.
 
-### 5. Pre-fetch PMID Abstracts (Recommended)
+### 6. Pre-fetch PMID Abstracts (Recommended)
 
 Abstracts fetched from NCBI are automatically cached in a local SQLite database (`data/pmid_cache.db`). For large datasets, pre-fetch all abstracts before running evaluation to avoid rate limits during batch processing:
 
 ```bash
-python scripts/prefetch_pmid_abstracts.py --tsv-file data/test_data_biolink.tsv
-
-# Adjust batch size and rate limiting
-python scripts/prefetch_pmid_abstracts.py --tsv-file data/test_data_biolink.tsv --batch-size 200 --delay 1.0
+python scripts/prefetch_pmid_abstracts.py \
+    --tsv-file data/semmedb_kgx/semmeddb_edges_extracted.tsv \
+    --batch-size 200 --delay 1.0
 
 # Force re-fetch (overwrite cached entries)
-python scripts/prefetch_pmid_abstracts.py --tsv-file data/test_data_biolink.tsv --force
+python scripts/prefetch_pmid_abstracts.py \
+    --tsv-file data/semmedb_kgx/semmeddb_edges_extracted.tsv --force
+```
+
+If the initial fetch has transient network failures, retry only the failed PMIDs:
+
+```bash
+python scripts/retry_failed_pmids.py --batch-size 200 --delay 1.0
 ```
 
 To diagnose cache issues:
 
 ```bash
 # Find PMIDs that failed to cache (errors or missing abstracts)
-python scripts/check_failed_pmids.py --tsv-file data/test_data_biolink.tsv
+python scripts/check_failed_pmids.py \
+    --tsv-file data/semmedb_kgx/semmeddb_edges_extracted.tsv
 
 # Check overall cache status
 python scripts/check_cache_status.py
 ```
 
-### 6. Configure Environment
+### 7. Configure Environment
 
 Create a `.env` file in the project root:
 
@@ -99,7 +130,7 @@ VLLM_MODEL_URLS=gpt-oss-20b-vllm=http://localhost:8000,gpt-oss-120b-vllm=http://
 AVAILABLE_VLLM_MODELS=gpt-oss-20b-vllm,gpt-oss-120b-vllm
 ```
 
-### 7. Run Evaluation
+### 8. Run Evaluation
 
 ## Usage
 
@@ -118,43 +149,72 @@ Output format is auto-detected from the file extension:
 | `--val_model` | Validation model (default: first in `AVAILABLE_VLLM_MODELS`) |
 | `--round2_model` | Optional Round 2 model for re-evaluating yes/maybe results |
 | `--table` | SQLite table name, only for `.db` output (default: `evaluations`) |
-| `--node_dict` | KG2 nodes file for richer entity context |
+| `--node_dict` | Nodes file (`.jsonl`, `.jsonl.gz`) for richer entity context |
+| `--names_file` | `curie_all_names.tsv` to supplement `--node_dict` with richer equivalent names |
 | `--predicate_file` | Biolink predicates TSV with predicate definitions (columns: `predicate`, `description`) |
 | `--max_concurrent` | Max concurrent requests (default: `MAX_CONCURRENT_REQUESTS` from `.env`) |
+| `--overwrite` | Discard existing output and start fresh (default: auto-resume) |
 | `--verbose` / `-v` | Enable DEBUG logging |
+
+### Stop & Resume
+
+Results are written incrementally — every completed row is flushed to disk immediately. You can safely `Ctrl+C` at any time and re-run the exact same command to resume:
+
+```bash
+# First run (or resume after interruption) — same command each time
+python main.py --input data/semmedb_kgx/edges_with_abstract.tsv --output results.tsv \
+    --val_model gpt-oss-20b-vllm \
+    --predicate_file data/biolink_data/biolink_predicates.tsv \
+    --node_dict data/semmedb_kgx/normalized_nodes.jsonl \
+    --names_file data/semmedb_kgx/curie_all_names.tsv
+
+# To discard previous progress and start over
+python main.py --input data/semmedb_kgx/edges_with_abstract.tsv --output results.tsv \
+    --val_model gpt-oss-20b-vllm --overwrite \
+    --predicate_file data/biolink_data/biolink_predicates.tsv \
+    --node_dict data/semmedb_kgx/normalized_nodes.jsonl \
+    --names_file data/semmedb_kgx/curie_all_names.tsv
+```
+
+On resume, the program reads the existing output file, determines which `(subject_curie, predicate, object_curie, PMID)` rows are already evaluated, and only processes the remaining rows.
 
 ### Examples
 
 ```bash
 # Basic evaluation (SQLite output)
-python main.py --input data/test_data_biolink.tsv --output results.db \
+python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.db \
     --val_model gpt-oss-20b-vllm \
     --predicate_file data/biolink_data/biolink_predicates.tsv \
-    --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz
+    --node_dict data/semmedb_kgx/normalized_nodes.jsonl \
+    --names_file data/semmedb_kgx/curie_all_names.tsv
 
 # TSV output
-python main.py --input data/test_data_biolink.tsv --output results.tsv \
+python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.tsv \
     --val_model gpt-oss-20b-vllm \
     --predicate_file data/biolink_data/biolink_predicates.tsv \
-    --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz
+    --node_dict data/semmedb_kgx/normalized_nodes.jsonl \
+    --names_file data/semmedb_kgx/curie_all_names.tsv
 
 # High concurrency
-python main.py --input data/test_data_biolink.tsv --output results.tsv \
+python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.tsv \
     --val_model gpt-oss-20b-vllm --max_concurrent 30 \
     --predicate_file data/biolink_data/biolink_predicates.tsv \
-    --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz
+    --node_dict data/semmedb_kgx/normalized_nodes.jsonl \
+    --names_file data/semmedb_kgx/curie_all_names.tsv
 
 # Two-round evaluation (Round 1 with 20B, Round 2 with 120B)
-python main.py --input data/test_data_biolink.tsv --output results.tsv \
+python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.tsv \
     --val_model gpt-oss-20b-vllm --round2_model gpt-oss-120b-vllm \
     --predicate_file data/biolink_data/biolink_predicates.tsv \
-    --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz
+    --node_dict data/semmedb_kgx/normalized_nodes.jsonl \
+    --names_file data/semmedb_kgx/curie_all_names.tsv
 
 # Write to a custom table name (useful for multiple runs in the same DB)
-python main.py --input data/test_data_biolink.tsv --output results.db \
+python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.db \
     --val_model gpt-oss-20b-vllm --table run_20b_v1 \
     --predicate_file data/biolink_data/biolink_predicates.tsv \
-    --node_dict data/kg2_data/kg2c-2.10.2-v1.0-nodes.jsonl.gz
+    --node_dict data/semmedb_kgx/normalized_nodes.jsonl \
+    --names_file data/semmedb_kgx/curie_all_names.tsv
 ```
 
 ## Input Format

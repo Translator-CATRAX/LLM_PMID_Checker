@@ -1,8 +1,15 @@
-"""Load entity info from KG2 nodes JSONL.gz for enriching prompts.
+"""Load entity info from KG2 or KGX nodes JSONL for enriching prompts.
 
-Streams through the compressed file once, extracting only the nodes
-whose id or equivalent_curies match the requested CURIEs.
+Streams through the file once, extracting only the nodes whose id or
+equivalent CURIEs match the requested set.
+
+Supports both KG2 (``equivalent_curies``, ``all_names``) and KGX
+(``equivalent_identifiers``) node schemas.  For KGX, call
+:meth:`merge_all_names_tsv` after loading to supplement ``all_names``
+from a ``curie_all_names.tsv`` produced by
+``scripts/extract_curie_names.py``.
 """
+import csv
 import gzip
 import json
 import logging
@@ -12,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 class NodeDictLoader:
-    """Loads node info (name, category, description) from a KG2 nodes file.
+    """Loads node info (name, category, description) from a nodes file.
 
     Supports:
-      - .jsonl.gz  (KG2 raw format, streamed with target-CURIE filtering)
-      - .json / .json.gz  (pre-built {curie: {name, category, description}} dict)
+      - .jsonl / .jsonl.gz  (KG2 or KGX node format, streamed with target-CURIE filtering)
+      - .json / .json.gz    (pre-built {curie: {name, category, description}} dict)
     """
 
     def __init__(self):
@@ -31,9 +38,10 @@ class NodeDictLoader:
         """Load node info from a file.
 
         Args:
-            path: Path to a .jsonl.gz (KG2 nodes) or .json/.json.gz (pre-built dict)
+            path: Path to a .jsonl/.jsonl.gz (KG2/KGX nodes) or
+                  .json/.json.gz (pre-built dict)
             target_curies: If provided, only load nodes matching these CURIEs.
-                           Strongly recommended for .jsonl.gz files (6M+ nodes).
+                           Strongly recommended for large node files.
 
         Returns:
             NodeDictLoader instance with loaded data
@@ -41,7 +49,9 @@ class NodeDictLoader:
         loader = cls()
 
         if path.endswith('.jsonl.gz'):
-            loader._load_jsonl_gz(path, target_curies)
+            loader._load_jsonl(path, target_curies, compressed=True)
+        elif path.endswith('.jsonl'):
+            loader._load_jsonl(path, target_curies, compressed=False)
         elif path.endswith('.json.gz'):
             loader._load_json_gz(path, target_curies)
         elif path.endswith('.json'):
@@ -49,7 +59,7 @@ class NodeDictLoader:
         else:
             raise ValueError(
                 f"Unsupported file format: {path}. "
-                f"Expected .jsonl.gz, .json.gz, or .json"
+                f"Expected .jsonl, .jsonl.gz, .json.gz, or .json"
             )
 
         logger.info(f"Loaded {len(loader._dict)} node entries from {path}")
@@ -70,21 +80,63 @@ class NodeDictLoader:
             return info.get('all_names')
         return None
 
+    def merge_all_names_tsv(self, tsv_path: str) -> None:
+        """Merge ``all_names`` from a TSV produced by ``extract_curie_names.py``.
+
+        Expects columns ``curie_id`` and ``all_names`` (pipe-delimited).
+        Only updates entries already present in ``_dict``; names loaded here
+        **replace** the fallback ``[name]`` list.
+        """
+        updated = 0
+        with open(tsv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter='\t')
+            for row in reader:
+                curie = row['curie_id']
+                if curie not in self._dict:
+                    continue
+                raw = row.get('all_names', '')
+                if raw:
+                    names = [n for n in raw.split('|') if n]
+                    if names:
+                        self._dict[curie]['all_names'] = names
+                        updated += 1
+        logger.info(
+            f"Merged all_names for {updated:,} CURIEs from {tsv_path}"
+        )
+
     def __len__(self) -> int:
         return len(self._dict)
 
     def __contains__(self, curie: str) -> bool:
         return curie in self._dict
 
-    def _load_jsonl_gz(
+    @staticmethod
+    def _get_equiv_curies(node: dict) -> list:
+        """Return equivalent CURIEs regardless of schema flavour."""
+        return (
+            node.get('equivalent_curies')
+            or node.get('equivalent_identifiers')
+            or []
+        )
+
+    @staticmethod
+    def _normalize_category(raw) -> str:
+        """Accept both a plain string and a list of strings."""
+        if isinstance(raw, list):
+            return raw[0] if raw else ''
+        return raw or ''
+
+    def _load_jsonl(
         self,
         path: str,
         target_curies: Optional[Set[str]],
+        *,
+        compressed: bool = False,
     ):
-        """Stream through KG2 nodes JSONL.gz, keeping only matching entries."""
+        """Stream through a JSONL node file (KG2 or KGX), keeping matches."""
         if not target_curies:
             logger.warning(
-                "Loading JSONL.gz without target_curies -- "
+                "Loading JSONL without target_curies -- "
                 "this will scan all nodes but only store unique ids. "
                 "Consider providing target_curies for efficiency."
             )
@@ -93,7 +145,13 @@ class NodeDictLoader:
         found_count = 0
         scanned = 0
 
-        with gzip.open(path, 'rt', encoding='utf-8') as f:
+        opener = (
+            gzip.open(path, 'rt', encoding='utf-8')
+            if compressed
+            else open(path, 'r', encoding='utf-8')
+        )
+
+        with opener as f:
             for line in f:
                 scanned += 1
                 if scanned % 1_000_000 == 0:
@@ -104,32 +162,29 @@ class NodeDictLoader:
 
                 node = json.loads(line)
                 node_id = node.get('id', '')
-                equiv = node.get('equivalent_curies', [])
+                equiv = self._get_equiv_curies(node)
 
-                # Determine if this node matches any target CURIE
                 if target is not None:
                     matching_curies = target.intersection(equiv)
-                    matching_curies.update(
-                        {node_id} if node_id in target else set()
-                    )
+                    if node_id in target:
+                        matching_curies.add(node_id)
                     if not matching_curies:
                         continue
                 else:
                     matching_curies = {node_id}
 
+                name = node.get('name', '')
                 info = {
-                    'name': node.get('name', ''),
-                    'category': node.get('category', ''),
+                    'name': name,
+                    'category': self._normalize_category(node.get('category', '')),
                     'description': node.get('description', ''),
-                    'all_names': node.get('all_names', []),
+                    'all_names': node.get('all_names') or ([name] if name else []),
                 }
 
-                # Map every matching CURIE to this node's info
                 for curie in matching_curies:
                     self._dict[curie] = info
                 found_count += 1
 
-                # Early exit if all targets found
                 if target is not None and target.issubset(self._dict.keys()):
                     logger.info(
                         f"All {len(target)} target CURIEs found "

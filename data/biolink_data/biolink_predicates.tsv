@@ -1,18 +1,18 @@
 predicate	description
-biolink:active_in	
+biolink:active_in	Holds between a gene or gene product and a cellular component in which it carries out its molecular function.
 biolink:actively_involved_in	holds between a continuant and a process or function, where the continuant actively contributes to part or all of the process or function it realizes
 biolink:actively_involves	
-biolink:acts_upstream_of	
-biolink:acts_upstream_of_negative_effect	
-biolink:acts_upstream_of_or_within	
-biolink:acts_upstream_of_or_within_negative_effect	
-biolink:acts_upstream_of_or_within_positive_effect	
-biolink:acts_upstream_of_positive_effect	
+biolink:acts_upstream_of	Holds between a gene or gene product and a biological process such that the molecular function of the gene product, by way of a chain of causally linked events, is upstream of and contributes to the execution of the process.
+biolink:acts_upstream_of_negative_effect	Holds between a gene or gene product and a biological process where the molecular function of the gene product is upstream of and has a negative (inhibiting or decreasing) effect on the execution of the process.
+biolink:acts_upstream_of_or_within	Holds between a gene or gene product and a biological process when the gene product either acts upstream of the process or participates in it; used when the more specific causal relationship is not known. Corresponds to RO:0002264.
+biolink:acts_upstream_of_or_within_negative_effect	Holds between a gene or gene product and a biological process when the gene product acts upstream of or within the process with a negative (inhibiting or decreasing) effect on its execution. Corresponds to RO:0004033.
+biolink:acts_upstream_of_or_within_positive_effect	Holds between a gene or gene product and a biological process when the gene product acts upstream of or within the process with a positive (activating or increasing) effect on its execution. Corresponds to RO:0004032.
+biolink:acts_upstream_of_positive_effect	Holds between a gene or gene product and a biological process where the molecular function of the gene product is upstream of and has a positive (activating or increasing) effect on the execution of the process.
 biolink:adverse_event_of	
 biolink:affected_by	describes an entity of which the state or quality is affected by another existing entity.
 biolink:affects	Describes an entity that has an effect on the state or quality of another existing entity.
 biolink:affects_likelihood_of	Holds between two entities where the presence or application of one alters the chance that the other will come to be.
-biolink:affects_sensitivity_to	holds between two chemical entities or genes or gene products where the action of one affects the susceptibility/sensitivity of a biological entity or system (e.g. an organism, cell, cellular component, macromolecular machine mixin, biological or pathological process) to the other.
+biolink:affects_sensitivity_to	holds between two chemical entities or genes or gene products where the action of one affects the susceptibility/sensitivity of a biological entity or system to the other.
 biolink:ameliorates_condition	Holds between an entity and an existing medical condition (disease or phenotypic feature) where the entity is able to ameliorate symptoms, stabilize progression, or cure the condition.
 biolink:amount_or_activity_decreased_by	
 biolink:amount_or_activity_increased_by	
@@ -31,11 +31,11 @@ biolink:biomarker_for	holds between a measurable chemical entity and a disease o
 biolink:broad_match	a list of terms from different schemas or terminology systems that have a broader, more general meaning. Broader terms are typically shown as parents in a hierarchy or tree.
 biolink:can_be_carried_out_by	
 biolink:capable_of	holds between a physical entity and process or function, where the continuant alone has the ability to carry out the process or function.
-biolink:catalyzes	
+biolink:catalyzes	Holds between a macromolecular machine (typically an enzyme or ribozyme) and a biochemical reaction or process whose rate it accelerates, without itself being consumed, by lowering the activation energy.
 biolink:caused_by	holds between two entities where the occurrence, existence, or activity of one is caused by the occurrence or generation of the other
 biolink:causes	holds between two entities where the occurrence, existence, or activity of one causes the occurrence or generation of the other
 biolink:chemically_similar_to	holds between one small molecule entity and another that it approximates for purposes of scientific study, in virtue of its exhibiting similar features of the studied entity.
-biolink:close_match	a list of terms from different schemas or terminology systems that have a semantically similar but not strictly equivalent, broader, or narrower meaning. Such terms often describe the same general concept from different ontological perspectives (e.g. drug as a type of chemical entity versus drug as a type of role borne by a chemical entity).
+biolink:close_match	a list of terms from different schemas or terminology systems that have a semantically similar but not strictly equivalent, broader, or narrower meaning. Such terms often describe the same general concept from different ontological perspectives.
 biolink:coexists_with	holds between two entities that are co-located in the same aggregate object, process, or spatio-temporal region
 biolink:coexpressed_with	holds between any two genes or gene products, in which both are generally expressed within a single defined experimental context.
 biolink:colocalizes_with	holds between two entities that are observed to be located in the same place.
@@ -48,20 +48,20 @@ biolink:condition_predisposed_by
 biolink:condition_prevented_by	
 biolink:condition_promoted_by	
 biolink:consumed_by	
-biolink:consumes	
+biolink:consumes	Holds between a process and an entity that is taken in and depleted by the process; for example a metabolite consumed in a biochemical reaction.
 biolink:contains_process	
 biolink:contraindicated_in	Holds between a substance, procedure, or activity and a medical condition or circumstance, where an authority has established that the substance, procedure, or activity should not be applied as an intervention in patients with the condition or circumstance because it can result in detrimental outcomes.
 biolink:contributes_to	holds between two entities where the occurrence, existence, or activity of one contributes to the occurrence or generation of the other
 biolink:contribution_from	
-biolink:contributor	
+biolink:contributor	Links an information content entity (such as a dataset, publication, or software artefact) to an agent responsible for making contributions to it. Used as an abstract grouping predicate over more specific contribution roles (author, editor, publisher, provider). Corresponds to dct:contributor.
 biolink:correlated_with	A relationship that holds between two concepts represented by variables for which a statistical correlation is believed to exist, as demonstrated using a correlation analysis method.
 biolink:decreased_amount_in	
 biolink:decreased_likelihood_associated_with	
 biolink:decreases_amount_or_activity_of	A grouping mixin to help with searching for all the predicates that decrease the amount or activity of the object.
-biolink:decreases_sensitivity_to	holds between two chemical entities or genes or gene products where the action or effect of one decreases the susceptibility/sensitivity of a biological entity or system (e.g. an organism, cell, cellular component, macromolecular machine mixin, biological or pathological process) to the other
+biolink:decreases_sensitivity_to	holds between two chemical entities or genes or gene products where the action or effect of one decreases the susceptibility/sensitivity of a biological entity or system to the other
 biolink:derives_from	holds between two distinct material entities, the new entity and the old entity, in which the new entity begins to exist when the old entity ceases to exist, and the new entity inherits the significant portion of the matter of the old entity
 biolink:derives_into	holds between two distinct material entities, the old entity and the new entity, in which the new entity begins to exist when the old entity ceases to exist, and the new entity inherits the significant portion of the matter of the old entity
-biolink:develops_from	
+biolink:develops_from	Holds between two entities where the first develops, by one or more developmental processes, from the second; for example a cell type developing from a precursor cell type or a tissue developing from an embryonic primordium. Corresponds to RO:0002202.
 biolink:develops_into	
 biolink:diagnoses	a relationship that identifies the nature of (an illness or other problem) by examination of the symptoms.
 biolink:directly_physically_interacts_with	A causal mechanism mediated by a direct contact between the effector and target entities (this contact may be weak or strong, transient or stable).
@@ -82,7 +82,7 @@ biolink:gene_product_of	definition x has gene product of y if and only if y is a
 biolink:gene_fusion_with	holds between two independent genes that have fused through translocation, interstitial deletion, or chromosomal inversion to form a new, hybrid gene. Fusion genes are often implicated in various neoplasms and cancers.
 biolink:genetic_association	
 biolink:genetic_neighborhood_of	holds between two genes located nearby one another on a chromosome.
-biolink:genetically_associated_with	
+biolink:genetically_associated_with	A statistical association, observed in genetic studies, between a genetic entity such as a gene, locus, or variant and a phenotype, disease, or trait.
 biolink:genetically_interacts_with	holds between two genes whose phenotypic effects are dependent on each other in some way - such that their combined phenotypic effects are the result of some interaction between the activity of their gene products. Examples include epistasis and synthetic lethality.
 biolink:has_active_component	
 biolink:has_active_ingredient	holds between a drug and a molecular entity in which the latter is a part of the former, and is a biologically active component
@@ -94,13 +94,13 @@ biolink:has_chemical_role	A role is particular behaviour which a chemical entity
 biolink:has_completed	holds between an entity and a process that the entity is capable of and has completed
 biolink:has_contraindication	
 biolink:has_contributor	
-biolink:has_decreased_amount	
+biolink:has_decreased_amount	Holds between an entity and a component that is present at lower amount than in a reference state or sibling entity; used for comparative compositional statements.
 biolink:has_editor	
 biolink:has_excipient	holds between a drug and a molecular entities in which the latter is a part of the former, and is a biologically inactive component
 biolink:has_food_component	holds between food and one or more chemical entities composing it, irrespective of nutritional value (i.e. could also be a contaminant or additive)
 biolink:has_frameshift_variant	
 biolink:has_gene_product	holds between a gene and a transcribed and/or translated product generated from it
-biolink:has_increased_amount	
+biolink:has_increased_amount	Holds between an entity and a component that is present at higher amount than in a reference state or sibling entity; used for comparative compositional statements.
 biolink:has_input	holds between a process and a continuant, where the continuant is an input into the process
 biolink:has_manifestation	
 biolink:has_member	Defines a mereological relation between a collection and an item.
@@ -128,7 +128,7 @@ biolink:has_sequence_location	holds between two nucleic acid entities when the s
 biolink:has_sequence_variant	
 biolink:has_side_effect	An unintended, but predictable, secondary effect shown to be correlated with a therapeutic agent, drug or treatment. Side effects happen at normal, recommended doses or treatments, and are unrelated to the intended purpose of the medication.
 biolink:has_splice_site_variant	
-biolink:has_substrate	
+biolink:has_substrate	Holds between a biochemical reaction or catalytic process and a chemical entity that is acted upon (consumed or transformed) by that reaction.
 biolink:has_synonymous_variant	
 biolink:has_target	
 biolink:has_upstream_actor	
@@ -145,10 +145,11 @@ biolink:in_taxon	connects an entity to its taxonomic classification. Only certai
 biolink:increased_amount_of	
 biolink:increased_likelihood_associated_with	
 biolink:increases_amount_or_activity_of	A grouping mixin to help with searching for all the predicates that increase the amount or activity of the object.
-biolink:increases_sensitivity_to	holds between two chemical entities or genes or gene products where the action or effect of one increases the susceptibility/sensitivity of a biological entity or system (e.g. an organism, cell, cellular component, macromolecular machine mixin, biological or pathological process) to the other
-biolink:indirectly_physically_interacts_with	
+biolink:increases_sensitivity_to	holds between two chemical entities or genes or gene products where the action or effect of one increases the susceptibility/sensitivity of a biological entity or system to the other
+biolink:indirectly_physically_interacts_with	Holds between two entities that physically interact by way of one or more intermediary entities, rather than through direct physical contact.
 biolink:interacts_with	holds between any two entities that directly or indirectly interact with each other
 biolink:is_active_ingredient_of	holds between a molecular entity and a drug, in which the former is a part of the latter, and is a biologically active component
+biolink:is_chemical_role_of	Holds between a chemical role and a chemical entity that exhibits that role.
 biolink:is_diagnosed_by	
 biolink:is_excipient_of	holds between a molecular entity and a drug in which the former is a part of the latter, and is a biologically inactive component
 biolink:is_frameshift_variant_of	holds between a sequence variant and a gene, such the sequence variant causes a disruption of the translational reading frame, because the number of nucleotides inserted or deleted is not a multiple of three.
@@ -165,7 +166,7 @@ biolink:is_side_effect_of
 biolink:is_splice_site_variant_of	holds between a sequence variant and a gene, such the sequence variant is in the canonical splice site of one of the gene's exons.
 biolink:is_substrate_of	
 biolink:is_synonymous_variant_of	holds between a sequence variant and a gene, such the sequence variant is in the coding sequence of the gene, but results in the same amino acid sequence
-biolink:lacks_part	
+biolink:lacks_part	Holds between an entity and a component that is absent from it relative to a reference type; for example a cell type lacking a particular organelle or a protein lacking a particular domain. Corresponds to CL:lacks_part / PR:lacks_part.
 biolink:likelihood_affected_by	
 biolink:likelihood_associated_with	
 biolink:located_in	holds between a material entity and a material entity or site within which it is located (but of which it is not considered a part)
@@ -193,6 +194,7 @@ biolink:overlaps	holds between entities that overlap in their extents (materials
 biolink:paralogous_to	a homology relationship that holds between entities (typically genes) that diverged after a duplication event.
 biolink:part_of	holds between parts and wholes (material entities or processes)
 biolink:participates_in	holds between a continuant and a process, where the continuant is somehow involved in the process
+biolink:pharmacologically_interacts_with	holds between two pharmacologically active chemicals (typically drugs), where one alters the availability, efficacy, or toxicity of the other in the body when taken simultaneously - typically by altering how the body processes the chemical (pharmacokinetics) or how the chemical acts on the body (pharmacodynamics).
 biolink:phenotype_of	
 biolink:physically_interacts_with	holds between two entities that make physical contact as part of some interaction. does not imply a causal relationship.
 biolink:plasma_membrane_part_of	
@@ -205,11 +207,11 @@ biolink:primarily_composed_of
 biolink:produced_by	
 biolink:produces	holds between a material entity and a product that is generated through the intentional actions or functioning of the material entity
 biolink:promotes_condition	Holds between a substance, procedure, or activity and a medical condition (disease or phenotypic feature), and states that the substance, procedure, or activity is able to promote it manifesting in the first place.
-biolink:provider	person, group, organization or project that provides a piece of information (e.g. a knowledge association).
+biolink:provider	person, group, organization or project that provides a piece of information.
 biolink:publisher	"organization or person responsible for publishing books, periodicals, podcasts, games or software. Note that in the case of publications which have a containing ""published in"" node property, the publisher association may not be attached directly to the embedded child publication, but only made in between the parent's publication node and the publisher agent of the encompassing publication (e.g. only from the Journal referenced by the 'published_in' property of an journal article Publication node)."
 biolink:regulated_by	
 biolink:regulates	A more specific form of affects, that implies the effect results from a biologically evolved control mechanism. Gene-affects-gene relationships will (almost) always involve regulation. Exogenous/environmental chemical-affects-gene relationships are not cases of regulation in this definition. Instead these would be captured using the 'affects' predicate, or possibly one of the 'interacts with' predicates depending on the nature of the interaction.
-biolink:related_condition	
+biolink:related_condition	Links a genotype or genetic variant to a condition (disease or phenotypic feature) that is associated with it.
 biolink:related_to	A relationship that is asserted between two named things
 biolink:related_to_at_concept_level	Represents a relationship held between terminology components that describe the conceptual model of a domain.
 biolink:related_to_at_instance_level	Represents a relationship held between two instances of a data classes. Much like an assertion component, in an ABox, these represent facts associated with the conceptual model.
