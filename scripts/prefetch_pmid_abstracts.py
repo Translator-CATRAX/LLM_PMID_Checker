@@ -145,21 +145,25 @@ def normalize_pmid(raw: str) -> str:
 
 
 def load_pmids_from_tsv(tsv_path: str) -> Set[str]:
-    """Load unique PMIDs from the TSV file.
+    """Load unique PMIDs from a Parquet or TSV file.
 
     Handles both bare numeric IDs (e.g. '12345678') and CURIE-style
     identifiers (e.g. 'PMID:12345678').  Only the PMID column is read
-    via Polars lazy scanning to keep memory usage low on large files.
+    to keep memory usage low on large files.
     """
     logger.info(f"Loading PMIDs from {tsv_path}...")
 
     try:
-        unique_pmids = (
-            pl.scan_csv(tsv_path, separator='\t', infer_schema_length=0)
-            .select(pl.col('PMID'))
-            .unique()
-            .collect()
-        )
+        ext = Path(tsv_path).suffix.lower()
+        if ext in ('.parquet', '.pq'):
+            unique_pmids = pl.read_parquet(tsv_path, columns=['PMID']).unique()
+        else:
+            unique_pmids = (
+                pl.scan_csv(tsv_path, separator='\t', infer_schema_length=0)
+                .select(pl.col('PMID'))
+                .unique()
+                .collect()
+            )
 
         raw_pmids = unique_pmids['PMID'].drop_nulls().to_list()
         pmids = {normalize_pmid(p) for p in raw_pmids if p.strip()}
@@ -185,8 +189,8 @@ async def main():
     
     parser.add_argument(
         '--tsv-file',
-        default='data/semmeddb_data/semmeddb_edges_extracted_kg2.10.3.tsv',
-        help='Path to the TSV file containing PMIDs (default: data/semmeddb_data/semmeddb_edges_extracted_kg2.10.3.tsv)'
+        default='data/semmedb_kgx/semmeddb_edges_extracted.parquet',
+        help='Path to the input file (.parquet or .tsv) containing PMIDs'
     )
     parser.add_argument('--batch-size', type=int, default=100,
                         help='Number of PMIDs to fetch per batch (default: 100)')
