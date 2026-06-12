@@ -1,26 +1,23 @@
 #!/usr/bin/env python3
 """
-Extract subject_curie, predicate, object_curie, PMID, and SemMedDB sentence
-from a SemMedDB KGX JSONL file and write to a TSV file.
+Extract subject_curie, predicate, object_curie, PMID, and SemMedDB sentences
+from a SemMedDB KGX JSONL file and write to a Parquet file.
 
-When a record has multiple PMIDs, each PMID (with its corresponding sentence)
-is written as a separate row.
-
-Supports two input formats:
-  - KGX normalized: supporting text lives in has_supporting_studies -> study_results
-  - Legacy kg2:     supporting text lives in publications_info -> sentence
+Each output row is keyed by (subject, predicate, object, PMID). 
 """
 
 import json
-import csv
 import argparse
 import sys
 from pathlib import Path
+from collections import OrderedDict
+
+import polars as pl
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Extract fields from SemMedDB edges JSONL into a TSV."
+        description="Extract fields from SemMedDB edges JSONL into a Parquet file."
     )
     parser.add_argument(
         "--input", "-i",
@@ -31,8 +28,8 @@ def parse_args():
     parser.add_argument(
         "--output", "-o",
         type=Path,
-        default=Path("data/semmedb_kgx/semmeddb_edges_extracted.tsv"),
-        help="Path to the output TSV file",
+        default=Path("data/semmedb_kgx/semmeddb_edges_extracted.parquet"),
+        help="Path to the output Parquet file",
     )
     parser.add_argument(
         "--limit", "-n",
@@ -50,9 +47,9 @@ def open_input(path: Path):
     return open(path, "r", encoding="utf-8")
 
 
-def build_pmid_text_map(record: dict) -> dict[str, str]:
-    """Build a PMID -> supporting_text mapping from whichever format is present."""
-    pmid_map: dict[str, str] = {}
+def build_pmid_text_map(record: dict) -> dict[str, list[str]]:
+    """Build a PMID -> list of supporting_text mapping."""
+    pmid_map: dict[str, list[str]] = {}
 
     # KGX normalized format: has_supporting_studies
     studies = record.get("has_supporting_studies", {})
@@ -62,7 +59,7 @@ def build_pmid_text_map(record: dict) -> dict[str, str]:
                 xrefs = result.get("xref", [])
                 texts = result.get("supporting_text", [])
                 if xrefs and texts:
-                    pmid_map[xrefs[0]] = texts[0]
+                    pmid_map.setdefault(xrefs[0], []).append(texts[0])
         return pmid_map
 
     # Legacy kg2 format: publications_info
@@ -70,7 +67,7 @@ def build_pmid_text_map(record: dict) -> dict[str, str]:
     for pmid, info in pub_info.items():
         sentence = info.get("sentence", "")
         if sentence:
-            pmid_map[pmid] = sentence
+            pmid_map.setdefault(pmid, []).append(sentence)
 
     return pmid_map
 
@@ -83,17 +80,18 @@ def main():
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
-    fieldnames = ["subject_curie", "predicate", "object_curie", "PMID", "SemMedDB_sentence"]
-    rows_written = 0
+    fieldnames = ["subject_curie", "predicate", "object_curie", "PMID", "SemMedDB_sentences"]
+
     records_processed = 0
     skipped_no_text = 0
 
-    with open_input(args.input) as fin, \
-         open(args.output, "w", newline="", encoding="utf-8") as fout:
+    # Collect all sentences per (sub, pred, obj, PMID) key
+    # Use OrderedDict to preserve insertion order
+    rows: OrderedDict[tuple, list[str]] = OrderedDict()
 
-        writer = csv.DictWriter(fout, fieldnames=fieldnames, delimiter="\t")
-        writer.writeheader()
+    print("Pass 1: collecting sentences per (sub, pred, obj, PMID) ...")
 
+    with open_input(args.input) as fin:
         for line in fin:
             line = line.strip()
             if not line:
@@ -101,38 +99,59 @@ def main():
 
             record = json.loads(line)
             subject = record.get("subject", "")
-q            predicate = record.get("predicate", "")
+            predicate = record.get("predicate", "")
             obj = record.get("object", "")
             publications = record.get("publications", [])
             pmid_text = build_pmid_text_map(record)
 
             for pmid in publications:
-                sentence = pmid_text.get(pmid, "")
-                if not sentence:
-                    skipped_no_text += 1
+                texts = pmid_text.get(pmid, [])
+                key = (subject, predicate, obj, pmid)
 
-                writer.writerow({
-                    "subject_curie": subject,
-                    "predicate": predicate,
-                    "object_curie": obj,
-                    "PMID": pmid,
-                    "SemMedDB_sentence": sentence,
-                })
-                rows_written += 1
+                if not texts:
+                    skipped_no_text += 1
+                    if key not in rows:
+                        rows[key] = []
+                else:
+                    existing = rows.setdefault(key, [])
+                    for t in texts:
+                        if t not in existing:
+                            existing.append(t)
 
             records_processed += 1
 
             if records_processed % 500_000 == 0:
                 print(f"  Processed {records_processed:,} records, "
-                      f"wrote {rows_written:,} rows ...", flush=True)
+                      f"{len(rows):,} unique keys ...", flush=True)
 
             if args.limit and records_processed >= args.limit:
                 break
 
+    print(f"\nPass 2: building DataFrame ({len(rows):,} rows) ...")
+
+    multi_sentence = 0
+    data = {col: [] for col in fieldnames}
+
+    for (subject, predicate, obj, pmid), sentences in rows.items():
+        combined = " | ".join(sentences) if sentences else ""
+        if len(sentences) > 1:
+            multi_sentence += 1
+        data["subject_curie"].append(subject)
+        data["predicate"].append(predicate)
+        data["object_curie"].append(obj)
+        data["PMID"].append(pmid)
+        data["SemMedDB_sentences"].append(combined)
+
+    df = pl.DataFrame(data)
+    print(f"  DataFrame shape: {df.shape}")
+    print(f"  Writing Parquet ...")
+    df.write_parquet(args.output)
+
     print(f"\nDone.")
-    print(f"  Records processed: {records_processed:,}")
-    print(f"  Rows written:      {rows_written:,}")
-    print(f"  Skipped (no sentence): {skipped_no_text:,}")
+    print(f"  Records processed:      {records_processed:,}")
+    print(f"  Unique (sub,pred,obj,PMID) rows: {df.height:,}")
+    print(f"  Rows with multiple sentences:    {multi_sentence:,}")
+    print(f"  PMIDs with no sentence:          {skipped_no_text:,}")
     print(f"  Output: {args.output}")
 
 
