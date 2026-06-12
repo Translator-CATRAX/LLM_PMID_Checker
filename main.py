@@ -44,6 +44,7 @@ POLARS_TO_SQLITE = {
 
 DB_EXTENSIONS = {'.db', '.sqlite', '.sqlite3'}
 TSV_EXTENSIONS = {'.tsv', '.txt'}
+PARQUET_EXTENSIONS = {'.parquet', '.pq'}
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +96,17 @@ _ROW_KEY_COLS = ('subject_curie', 'predicate', 'object_curie', 'PMID')
 
 
 def _row_key(row: dict) -> tuple:
-    return tuple(str(row.get(c, '')) for c in _ROW_KEY_COLS)
+    return tuple(str(row.get(c, '')).strip() for c in _ROW_KEY_COLS)
+
+
+def _sanitize_for_tsv(val: str) -> str:
+    """Replace characters that would corrupt TSV format."""
+    return (val
+            .replace('\r\n', ' ')
+            .replace('\r', ' ')
+            .replace('\n', ' ')
+            .replace('\t', ' ')
+            .replace('"', "'"))
 
 
 def _load_completed_keys(output_path: str, out_fmt: str,
@@ -107,7 +118,13 @@ def _load_completed_keys(output_path: str, out_fmt: str,
 
     try:
         if out_fmt == 'tsv':
-            df = pl.read_csv(output_path, separator='\t', infer_schema_length=0)
+            df = pl.read_csv(output_path, separator='\t',
+                             infer_schema_length=0,
+                             truncate_ragged_lines=True,
+                             ignore_errors=True)
+            if not all(c in df.columns for c in _ROW_KEY_COLS):
+                return set()
+            df = df.select(list(_ROW_KEY_COLS))
         else:
             conn = sqlite3.connect(output_path)
             tables = [r[0] for r in conn.execute(
@@ -116,16 +133,14 @@ def _load_completed_keys(output_path: str, out_fmt: str,
             if table_name not in tables:
                 conn.close()
                 return set()
+            key_cols = ', '.join(f'"{c}"' for c in _ROW_KEY_COLS)
             df = pl.read_database(
-                f'SELECT * FROM "{table_name}"', conn
+                f'SELECT {key_cols} FROM "{table_name}"', conn
             )
             conn.close()
 
-        if not all(c in df.columns for c in _ROW_KEY_COLS):
-            return set()
-
         keys = set()
-        for row in df.select(list(_ROW_KEY_COLS)).iter_rows(named=True):
+        for row in df.iter_rows(named=True):
             keys.add(_row_key(row))
         return keys
     except Exception as e:
@@ -148,8 +163,14 @@ class IncrementalWriter:
 
         if out_fmt == 'tsv':
             if is_resume and Path(output_path).exists():
+                with open(output_path, 'rb') as f:
+                    f.seek(0, 2)
+                    pos = f.tell()
+                    needs_newline = pos > 0 and (f.seek(pos - 1), f.read(1))[1] != b'\n'
                 self._tsv_fh = open(output_path, 'a', newline='',
                                     encoding='utf-8')
+                if needs_newline:
+                    self._tsv_fh.write('\n')
             else:
                 self._tsv_fh = open(output_path, 'w', newline='',
                                     encoding='utf-8')
@@ -172,6 +193,7 @@ class IncrementalWriter:
         async with self.lock:
             vals = [str(combined.get(c, '')) for c in self.columns]
             if self.out_fmt == 'tsv':
+                vals = [_sanitize_for_tsv(v) for v in vals]
                 self._tsv_fh.write('\t'.join(vals) + '\n')
                 if self.rows_written % 50 == 0:
                     self._tsv_fh.flush()
@@ -542,7 +564,11 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
     print(f"Max concurrent requests: {concurrency}")
 
     # ---- read input --------------------------------------------------
-    df = pl.read_csv(input_file, separator='\t', infer_schema_length=0)
+    input_ext = Path(input_file).suffix.lower()
+    if input_ext in PARQUET_EXTENSIONS:
+        df = pl.read_parquet(input_file).cast({col: pl.Utf8 for col in pl.read_parquet_schema(input_file)})
+    else:
+        df = pl.read_csv(input_file, separator='\t', infer_schema_length=0)
 
     required_cols = {'subject_curie', 'predicate', 'object_curie', 'PMID'}
     missing = required_cols - set(df.columns)
@@ -569,22 +595,39 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
     # ---- resume: detect already-evaluated rows -----------------------
     is_resume = False
     completed_keys: set[tuple] = set()
+    if out_fmt == 'db':
+        no_abs_table = table_name + "_no_abstract"
+    else:
+        no_abs_path = Path(db_path).with_name(
+            Path(db_path).stem + "_no_abstract.tsv"
+        )
     if not overwrite:
         completed_keys = _load_completed_keys(db_path, out_fmt, table_name)
     if completed_keys:
         is_resume = True
-        before = df.height
         pending_mask = pl.Series(
             "_pending",
             [_row_key(row) not in completed_keys for row in df.iter_rows(named=True)]
         )
         df = df.filter(pending_mask)
-        print(f"Resume: {len(completed_keys):,} rows already done, "
-              f"{df.height:,} remaining")
+        print(f"\n>>> RESUME MODE <<<")
+        print(f"  Previously completed: {len(completed_keys):,} / {input_total:,}")
+        print(f"  Remaining to check:   {df.height:,}")
     else:
-        if overwrite and Path(db_path).exists():
-            Path(db_path).unlink()
+        out_path = Path(db_path)
+        if not overwrite and out_path.exists() and out_path.stat().st_size > 0:
+            print(f"WARNING: output file '{db_path}' exists "
+                  f"({out_path.stat().st_size:,} bytes) but no completed rows "
+                  f"could be detected — the file may be corrupted from a "
+                  f"previous run. Use --overwrite to discard it and start "
+                  f"fresh, or remove the file manually.")
+            return 1
+        if overwrite and out_path.exists():
+            out_path.unlink()
             print("Overwrite: removed existing output file")
+        if out_fmt != 'db' and overwrite and no_abs_path.exists():
+            no_abs_path.unlink()
+            print("Overwrite: removed existing no-abstract file")
 
     # ---- optional node_dict ------------------------------------------
     node_dict = None
@@ -615,15 +658,41 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
     df_skipped = df.filter(~has_abstract_series)
 
     if df_skipped.height > 0:
-        no_abs_path = Path(db_path).with_name(
-            Path(db_path).stem + "_no_abstract.tsv"
-        )
-        df_skipped.write_csv(no_abs_path, separator="\t")
-        print(f"Skipped {df_skipped.height:,} rows (no valid abstract) -> {no_abs_path}")
+        if out_fmt == 'db':
+            na_conn = sqlite3.connect(db_path)
+            na_conn.execute("PRAGMA journal_mode=WAL")
+            na_cols = df_skipped.columns
+            na_col_defs = ', '.join(f'"{c}" TEXT' for c in na_cols)
+            na_conn.execute(f'DROP TABLE IF EXISTS "{no_abs_table}"')
+            na_conn.execute(f'CREATE TABLE "{no_abs_table}" ({na_col_defs})')
+            na_ph = ', '.join('?' for _ in na_cols)
+            na_conn.executemany(
+                f'INSERT INTO "{no_abs_table}" VALUES ({na_ph})',
+                [[str(v) for v in row] for row in df_skipped.iter_rows()],
+            )
+            na_conn.commit()
+            na_conn.close()
+            print(f"Wrote {df_skipped.height:,} rows (no valid abstract) -> {db_path} table:{no_abs_table}")
+        else:
+            with open(no_abs_path, 'w', newline='', encoding='utf-8') as fh:
+                cols = df_skipped.columns
+                fh.write('\t'.join(cols) + '\n')
+                for row in df_skipped.iter_rows():
+                    vals = [_sanitize_for_tsv(str(v)) for v in row]
+                    fh.write('\t'.join(vals) + '\n')
+            print(f"Wrote {df_skipped.height:,} rows (no valid abstract) -> {no_abs_path}")
 
     df = df_valid
     total_rows = df.height
-    print(f"Rows to evaluate this run: {total_rows:,}")
+
+    print()
+    print("=" * 60)
+    print(f"  Total input rows:       {input_total:,}")
+    if is_resume:
+        print(f"  Previously completed:   {len(completed_keys):,}")
+    if df_skipped.height > 0:
+        print(f"  Skipped (no abstract):  {df_skipped.height:,}")
+    print(f"  To evaluate this run:   {total_rows:,}")
     print("=" * 60)
 
     if total_rows == 0:
@@ -647,6 +716,10 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
     rows_as_dicts = df.to_dicts()
     all_results = []
 
+    prev_done = len(completed_keys)
+    progress_interval = max(100, total_rows // 200)
+    progress_lock = asyncio.Lock()
+
     async def _eval(row, idx):
         async with semaphore:
             result = await evaluate_single_row(
@@ -654,6 +727,29 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
             )
         combined = {**row, **result}
         await writer.write_row(combined)
+
+        async with progress_lock:
+            done = writer.rows_written
+            if done % progress_interval == 0 or done == total_rows:
+                elapsed = time.time() - overall_start
+                overall_done = prev_done + done
+                pct = overall_done / input_total * 100
+                rate = done / elapsed if elapsed > 0 else 0
+                eta_s = (total_rows - done) / rate if rate > 0 else 0
+                eta_m, eta_h = eta_s / 60, eta_s / 3600
+                eta_str = (f"{eta_h:.1f}h" if eta_h >= 1
+                           else f"{eta_m:.1f}m" if eta_m >= 1
+                           else f"{eta_s:.0f}s")
+                print(
+                    f"\n>>> PROGRESS: {overall_done:,} / {input_total:,} "
+                    f"({pct:.2f}%) | "
+                    f"This session: {done:,} / {total_rows:,} | "
+                    f"Elapsed: {elapsed/60:.1f}m | "
+                    f"Rate: {rate:.1f} rows/s | "
+                    f"ETA: ~{eta_str}\n",
+                    flush=True,
+                )
+
         return result
 
     overall_start = time.time()
@@ -665,7 +761,15 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
     try:
         all_results = await asyncio.gather(*tasks)
     except (KeyboardInterrupt, asyncio.CancelledError):
-        print(f"\nInterrupted! {writer.rows_written:,} rows saved.")
+        saved = writer.rows_written
+        done_so_far = len(completed_keys) + saved
+        remaining = input_total - done_so_far
+        print(f"\n{'=' * 60}")
+        print(f"Interrupted!")
+        print(f"  Saved this session:     {saved:,}")
+        print(f"  Total completed so far: {done_so_far:,} / {input_total:,}")
+        print(f"  Remaining:              {remaining:,}")
+        print(f"{'=' * 60}")
         print("Re-run the same command to resume from where you stopped.")
     finally:
         writer.finalize()
@@ -676,7 +780,11 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
     # Re-read the full output for timing/metrics (includes resumed rows)
     try:
         if out_fmt == 'tsv':
-            df_full = pl.read_csv(db_path, separator='\t', infer_schema_length=0)
+            df_full = pl.read_csv(db_path, separator='\t',
+                                     infer_schema_length=0,
+                                     truncate_ragged_lines=True,
+                                     quote_char=None,
+                                     ignore_errors=True)
         else:
             conn = sqlite3.connect(db_path)
             df_full = pl.read_database(
@@ -770,32 +878,33 @@ def _print_metrics(df: pl.DataFrame, total_rows: int):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate research triples from a TSV file using vLLM, "
-                    "saving results to a SQLite database.",
+        description="Evaluate research triples using vLLM, saving results "
+                    "to a SQLite database (recommended) or TSV file.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Required TSV columns:  subject_curie, predicate, object_curie, PMID
-Optional TSV columns:  subject, object (entity names), ground_truth / Supported
-                       (any extra columns are preserved in the output)
+Required input columns:  subject_curie, predicate, object_curie, PMID
+Optional input columns:  subject, object (entity names), ground_truth / Supported
+                         (any extra columns are preserved in the output)
+
+Input format is auto-detected from the --input file extension:
+  .parquet / .pq            →  Parquet (recommended, preserves text exactly)
+  .tsv / .txt               →  Tab-separated values
+
+Output format is auto-detected from the --output file extension:
+  .db / .sqlite / .sqlite3  →  SQLite database (recommended for stop/resume)
+  .tsv / .txt               →  Tab-separated values
 
 Output columns added:  predicted, support, subject_mentioned, object_mentioned,
                        supporting_sentences, reasoning, runtime_seconds
 
-Output format is auto-detected from the --output file extension:
-  .db / .sqlite / .sqlite3  →  SQLite database
-  .tsv / .txt               →  Tab-separated values
-
 Examples:
-  python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/semmedb_kgx/normalized_nodes.jsonl --names_file data/semmedb_kgx/curie_all_names.tsv
-  python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/semmedb_kgx/normalized_nodes.jsonl --names_file data/semmedb_kgx/curie_all_names.tsv --max_concurrent 16
-  python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.tsv --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/semmedb_kgx/normalized_nodes.jsonl --names_file data/semmedb_kgx/curie_all_names.tsv --round2_model gpt-oss-120b-vllm
-  python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.tsv --output results.db --val_model gpt-oss-20b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/semmedb_kgx/normalized_nodes.jsonl --names_file data/semmedb_kgx/curie_all_names.tsv --table my_run_1
+  python main.py --input data/semmedb_kgx/semmeddb_edges_extracted.parquet --output results.db --val_model gpt-oss-120b-vllm --predicate_file data/biolink_data/biolink_predicates.tsv --node_dict data/semmedb_kgx/normalized_nodes.jsonl --names_file data/semmedb_kgx/curie_all_names.tsv
         """,
     )
     parser.add_argument('--input', required=True,
-                        help='Input TSV file (must contain subject_curie, predicate, object_curie, PMID)')
+                        help='Input file (.parquet or .tsv; must contain subject_curie, predicate, object_curie, PMID)')
     parser.add_argument('--output', required=True,
-                        help='Output file. Use .db/.sqlite for SQLite or .tsv for TSV')
+                        help='Output file. Use .db/.sqlite for SQLite (recommended) or .tsv for TSV')
     parser.add_argument('--table', default='evaluations',
                         help='SQLite table name (only used for .db output; default: evaluations)')
     parser.add_argument('--val_model', default=settings.default_model,
