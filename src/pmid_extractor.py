@@ -8,6 +8,14 @@ from src.pmid_cache import PMIDCache
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_pmid(raw: str) -> str:
+    """Strip 'PMID:' prefix to get the bare numeric ID expected by NCBI."""
+    raw = raw.strip()
+    if raw.upper().startswith("PMID:"):
+        return raw[5:]
+    return raw
+
 @dataclass
 class AbstractData:
     """Container for PMID abstract data."""
@@ -42,80 +50,83 @@ class PMIDExtractor:
     def extract_abstracts(self, pmids: List[str]) -> Dict[str, AbstractData]:
         """Extract abstracts for a list of PMIDs, using cache when available.
         
+        Accepts PMIDs with or without the ``PMID:`` prefix.  Internally all
+        identifiers are normalized to bare numeric strings for cache lookups
+        and NCBI API calls.  The returned dictionary is keyed by the
+        **original** PMID strings the caller passed in.
+        
         Args:
-            pmids: List of PubMed identifiers
+            pmids: List of PubMed identifiers (e.g. "2843522" or "PMID:2843522")
             
         Returns:
-            Dictionary mapping PMID to AbstractData
+            Dictionary mapping the original PMID string to AbstractData
         """
-        results = {}
+        results: Dict[str, AbstractData] = {}
         
         if not pmids:
             return results
+
+        bare_to_orig: Dict[str, str] = {}
+        for orig in pmids:
+            bare_to_orig[_normalize_pmid(orig)] = orig
+        bare_ids = list(bare_to_orig.keys())
         
         # Try to get cached results first
-        pmids_to_fetch = pmids
+        bare_to_fetch = bare_ids
         if self.use_cache and self.cache:
-            cached_results = self.cache.get_many(pmids)
+            cached_results = self.cache.get_many(bare_ids)
             
-            # Add cached results to output
-            for pmid, cached_abstract in cached_results.items():
-                results[pmid] = AbstractData(
-                    pmid=cached_abstract.pmid,
+            for bare, cached_abstract in cached_results.items():
+                orig = bare_to_orig[bare]
+                results[orig] = AbstractData(
+                    pmid=bare,
                     title=cached_abstract.title,
                     abstract=cached_abstract.abstract,
                     error=None
                 )
             
-            # Filter out already cached PMIDs
-            pmids_to_fetch = [pmid for pmid in pmids if pmid not in cached_results]
+            bare_to_fetch = [b for b in bare_ids if b not in cached_results]
             
             if cached_results:
                 logger.info(f"Found {len(cached_results)}/{len(pmids)} PMIDs in cache")
             
-            if not pmids_to_fetch:
+            if not bare_to_fetch:
                 logger.info("All PMIDs found in cache, no NCBI query needed")
                 return results
         
         # Fetch remaining PMIDs from NCBI
-        logger.info(f"Fetching {len(pmids_to_fetch)} PMIDs from NCBI E-utilities")
+        logger.info(f"Fetching {len(bare_to_fetch)} PMIDs from NCBI E-utilities")
         
+        fetched_bare: Dict[str, AbstractData] = {}
         try:
-            # Fetch articles from PubMed
             response = self.entrez_api.fetch(
-                pmids_to_fetch,
-                max_results=len(pmids_to_fetch),
+                bare_to_fetch,
+                max_results=len(bare_to_fetch),
                 database='pubmed'
             )
             
-            # Parse the XML response data
             if response.data:
                 import xml.etree.ElementTree as ET
                 root = response.data if hasattr(response.data, 'tag') else ET.fromstring(str(response.data))
                 
-                # Find all PubmedArticle elements
                 articles = root.findall('.//PubmedArticle')
                 
                 for article in articles:
                     try:
-                        # Extract PMID
                         pmid_elem = article.find('.//PMID')
-                        pmid = pmid_elem.text if pmid_elem is not None else ""
+                        bare = pmid_elem.text.strip() if pmid_elem is not None else ""
                         
-                        if not pmid:
+                        if not bare:
                             continue
                         
-                        # Extract title - use itertext() to handle nested formatting tags
                         title_elem = article.find('.//ArticleTitle')
                         title = ''.join(title_elem.itertext()).strip() if title_elem is not None else ""
                         
-                        # Extract abstract - combine all AbstractText elements
                         abstract_elems = article.findall('.//AbstractText')
                         abstract_parts = []
                         for elem in abstract_elems:
                             text = ''.join(elem.itertext()).strip()
                             if text:
-                                # Check if there's a label attribute
                                 label = elem.get('Label', '')
                                 if label:
                                     abstract_parts.append(f"{label}: {text}")
@@ -124,20 +135,18 @@ class PMIDExtractor:
                         
                         abstract = ' '.join(abstract_parts) if abstract_parts else ""
                         
-                        # Create AbstractData object
                         abstract_data = AbstractData(
-                            pmid=pmid,
+                            pmid=bare,
                             title=title,
                             abstract=abstract,
                             error=None if abstract else "No abstract available"
                         )
                         
-                        results[pmid] = abstract_data
+                        fetched_bare[bare] = abstract_data
                         
-                        # Cache the result if caching is enabled
                         if self.use_cache and self.cache:
                             self.cache.put(
-                                pmid=pmid,
+                                pmid=bare,
                                 title=title,
                                 abstract=abstract,
                                 fetch_date=datetime.utcnow().isoformat(),
@@ -149,20 +158,19 @@ class PMIDExtractor:
                         continue
             
             # Handle PMIDs that weren't found in the response
-            for pmid in pmids_to_fetch:
-                if pmid not in results:
+            for bare in bare_to_fetch:
+                if bare not in fetched_bare:
                     abstract_data = AbstractData(
-                        pmid=pmid,
+                        pmid=bare,
                         title="",
                         abstract="",
                         error="PMID not found or could not be retrieved"
                     )
-                    results[pmid] = abstract_data
+                    fetched_bare[bare] = abstract_data
                     
-                    # Cache the error result if caching is enabled
                     if self.use_cache and self.cache:
                         self.cache.put(
-                            pmid=pmid,
+                            pmid=bare,
                             title="",
                             abstract="",
                             fetch_date=datetime.utcnow().isoformat(),
@@ -171,25 +179,29 @@ class PMIDExtractor:
                     
         except Exception as e:
             logger.error(f"Failed to extract abstracts: {e}")
-            for pmid in pmids_to_fetch:
-                if pmid not in results:
+            for bare in bare_to_fetch:
+                if bare not in fetched_bare:
                     abstract_data = AbstractData(
-                        pmid=pmid,
+                        pmid=bare,
                         title="",
                         abstract="",
                         error=f"Extraction failed: {str(e)}"
                     )
-                    results[pmid] = abstract_data
+                    fetched_bare[bare] = abstract_data
                     
-                    # Cache the error result if caching is enabled
                     if self.use_cache and self.cache:
                         self.cache.put(
-                            pmid=pmid,
+                            pmid=bare,
                             title="",
                             abstract="",
                             fetch_date=datetime.utcnow().isoformat(),
                             error=abstract_data.error
                         )
+
+        # Map fetched results back to original PMID strings
+        for bare, data in fetched_bare.items():
+            orig = bare_to_orig.get(bare, bare)
+            results[orig] = data
         
         return results
     
