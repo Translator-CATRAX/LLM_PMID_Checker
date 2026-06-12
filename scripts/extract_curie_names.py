@@ -59,15 +59,22 @@ def extract_all_names(node_info: dict) -> list[str]:
     return list(seen_lower.values())
 
 
-def load_unique_curies(tsv_path: str) -> list[str]:
+def load_unique_curies(input_path: str) -> list[str]:
     """Read subject_curie and object_curie columns, return sorted unique list."""
-    logger.info(f"Loading unique CURIEs from {tsv_path} ...")
-    curies = set()
-    with open(tsv_path, "r") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        for row in reader:
-            curies.add(row["subject_curie"])
-            curies.add(row["object_curie"])
+    logger.info(f"Loading unique CURIEs from {input_path} ...")
+    ext = Path(input_path).suffix.lower()
+    if ext in ('.parquet', '.pq'):
+        import polars as pl
+        df = pl.read_parquet(input_path, columns=['subject_curie', 'object_curie'])
+        curies = set(df['subject_curie'].drop_nulls().unique().to_list()
+                     + df['object_curie'].drop_nulls().unique().to_list())
+    else:
+        curies = set()
+        with open(input_path, "r") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            for row in reader:
+                curies.add(row["subject_curie"])
+                curies.add(row["object_curie"])
     result = sorted(curies)
     logger.info(f"Found {len(result)} unique CURIEs")
     return result
@@ -160,8 +167,8 @@ def main():
     )
     parser.add_argument(
         "--input",
-        default="data/semmedb_kgx/semmeddb_edges_extracted.tsv",
-        help="Path to input TSV with subject_curie and object_curie columns",
+        default="data/semmedb_kgx/semmeddb_edges_extracted.parquet",
+        help="Path to input file (.parquet or .tsv) with subject_curie and object_curie columns",
     )
     parser.add_argument(
         "--output",

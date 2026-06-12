@@ -47,13 +47,18 @@ def get_failed_pmids(cache: PMIDCache):
 
 
 def get_missing_pmids_from_tsv(tsv_path: str, cache: PMIDCache):
-    """Find PMIDs from TSV that are not in cache at all."""
+    """Find PMIDs from a Parquet or TSV file that are not in cache."""
     if not HAS_POLARS:
-        print("Note: polars not available, skipping TSV comparison")
+        print("Note: polars not available, skipping file comparison")
         return set()
     
     try:
-        df = pl.read_csv(tsv_path, separator='\t', infer_schema_length=0)
+        from pathlib import Path as _Path
+        ext = _Path(tsv_path).suffix.lower()
+        if ext in ('.parquet', '.pq'):
+            df = pl.read_parquet(tsv_path, columns=['PMID'])
+        else:
+            df = pl.read_csv(tsv_path, separator='\t', infer_schema_length=0)
         all_pmids = set(
             df['PMID']
             .drop_nulls()
@@ -85,8 +90,8 @@ def main():
     )
     parser.add_argument(
         '--tsv-file',
-        default='data/andy_team_data/processed_mediK_results_v2.tsv',
-        help='Path to the TSV file (to check for completely missing PMIDs)'
+        default='data/semmedb_kgx/semmeddb_edges_extracted.parquet',
+        help='Path to the input file (.parquet or .tsv; to check for missing PMIDs)'
     )
     parser.add_argument(
         '--verbose', '-v',
