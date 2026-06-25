@@ -643,6 +643,22 @@ async def run_batch(input_file: str, db_path: str, val_model: str, *,
             node_dict.merge_all_names_tsv(names_file)
             print(f"  Merged all_names from: {names_file}")
 
+    # ---- enrich with entity names from node_dict -----------------------
+    if node_dict:
+        subj_names = df['subject_curie'].map_elements(
+            lambda c: (node_dict.get_node_info(c) or {}).get('name', ''),
+            return_dtype=pl.Utf8,
+        )
+        obj_names = df['object_curie'].map_elements(
+            lambda c: (node_dict.get_node_info(c) or {}).get('name', ''),
+            return_dtype=pl.Utf8,
+        )
+        subj_idx = df.columns.index('subject_curie') + 1
+        obj_curie_idx = df.columns.index('object_curie')
+        df = df.insert_column(subj_idx, subj_names.alias('subject_name'))
+        df = df.insert_column(obj_curie_idx + 2, obj_names.alias('object_name'))
+        print(f"  Added subject_name and object_name columns from node_dict")
+
     # ---- filter out rows with no valid abstract in cache ---------------
     cache = PMIDCache()
     print(f"Checking PMID abstracts in cache ({cache.count():,} cached)...")

@@ -310,7 +310,9 @@ Results are written to a **SQLite database** (`.db`, recommended) or a **TSV fil
 
 | Column | Type | Description |
 |---|---|---|
+| `subject_name` | text | Subject entity name from node dictionary (inserted after `subject_curie`) |
 | `predicted` | bool | Whether the triple is supported (`support == "yes"`) |
+| `object_name` | text | Object entity name from node dictionary (inserted after `object_curie`) |
 | `support` | text | `yes`, `no`, or `maybe` |
 | `subject_mentioned` | bool | Whether the subject appears in the abstract |
 | `object_mentioned` | bool | Whether the object appears in the abstract |
