@@ -25,9 +25,9 @@ python scripts/download_release_data.py --output-dir results --tag v1.0
 After running the command above, the following files will be downloaded:
 ```
 results/
-    results_no_abstract.parquet
-    results.parquet                           <-- use this (3.5G, 26,719,183 rows with 11 cols)
-    LLM_Pmid_Evaluation_SemMedDB_v1.0.tar.gz 
+    results_no_abstract_with_names.parquet
+    results_with_names.parquet                           <-- use this (5.9G, 26,719,183 rows with 13 cols)
+    LLM_Pmid_Evaluation_SemMedDB_with_names_v1.0.tar.gz 
 ```
 
 ### Explanation of Results
@@ -36,16 +36,18 @@ The release contains two Parquet files:
 
 | File | Size | Rows | Description |
 |---|---|---|---|
-| `results.parquet` | ~3.5 GB | 26,719,183 | Evaluation results for triples whose PMIDs had an available abstract |
-| `results_no_abstract.parquet` | ~41 MB | 1,292,499 | Triples whose PMIDs had no abstract available (not evaluated) |
+| `results_with_names.parquet` | ~5.9 GB | 26,719,183 | Evaluation results for triples whose PMIDs had an available abstract |
+| `results_no_abstract_with_names.parquet` | ~69 MB | 1,292,499 | Triples whose PMIDs had no abstract available (not evaluated) |
 
-**`results.parquet`** contains the original input columns plus LLM evaluation outputs:
+**`results_with_names.parquet`** contains the original input columns plus entity names and LLM evaluation outputs:
 
 | Column | Type | Description |
 |---|---|---|
 | `subject_curie` | string | Subject entity CURIE (e.g., `NCBITaxon:562`) |
+| `subject_name` | string | Subject entity name (e.g., `Escherichia coli`) |
 | `predicate` | string | Biolink predicate (e.g., `biolink:has_part`) |
 | `object_curie` | string | Object entity CURIE (e.g., `NCBIGene:100`) |
+| `object_name` | string | Object entity name (e.g., `ADA`) |
 | `PMID` | string | PubMed ID used for evaluation (e.g., `PMID:3047400`) |
 | `SemMedDB_sentences` | string | Original SemMedDB sentence(s) for this edge (pipe-separated if multiple) |
 | `predicted` | bool | Whether the triple is supported (`True` if `support == "yes"`) |

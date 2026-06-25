@@ -19,7 +19,7 @@ from urllib.error import HTTPError, URLError
 
 REPO = "RTXteam/LLM_PMID_Checker"
 API_URL = f"https://api.github.com/repos/{REPO}/releases"
-ARCHIVE_NAME = "LLM_Pmid_Evaluation_SemMedDB_v1.0.tar.gz"
+ARCHIVE_NAME = "LLM_Pmid_Evaluation_SemMedDB_with_names_v1.0.tar.gz"
 CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB read chunks
 
 
