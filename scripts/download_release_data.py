@@ -36,7 +36,7 @@ RELEASE_CONFIG = {
 CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB read chunks
 
 
-def get_release_assets(tag: str) -> list[dict]:
+def get_release_assets(tag: str) -> list:
     """Fetch the asset list for a given release tag."""
     url = f"{API_URL}/tags/{tag}"
     req = Request(url, headers={"Accept": "application/vnd.github+json"})
@@ -45,7 +45,7 @@ def get_release_assets(tag: str) -> list[dict]:
             import json
             data = json.loads(resp.read())
     except HTTPError as e:
-        sys.exit(f"Failed to fetch release '{tag}': HTTP {e.code} — {e.reason}")
+        sys.exit(f"Failed to fetch release '{tag}': HTTP {e.code} - {e.reason}")
     except URLError as e:
         sys.exit(f"Network error fetching release '{tag}': {e.reason}")
 
@@ -55,7 +55,7 @@ def get_release_assets(tag: str) -> list[dict]:
     return assets
 
 
-def download_file(url: str, dest: Path, name: str, size: int | None = None) -> None:
+def download_file(url: str, dest: Path, name: str, size=None) -> None:
     """Download a single file with progress reporting."""
     req = Request(url, headers={"Accept": "application/octet-stream"})
     downloaded = 0
@@ -68,15 +68,21 @@ def download_file(url: str, dest: Path, name: str, size: int | None = None) -> N
             downloaded += len(chunk)
             if size:
                 pct = downloaded / size * 100
-                print(f"\r  Downloading {name}: {downloaded / 1e6:.1f} MB / "
-                      f"{size / 1e6:.1f} MB ({pct:.1f}%)", end="", flush=True)
+                print(
+                    f"\r  Downloading {name}: "
+                    f"{downloaded / 1e6:.1f} MB / {size / 1e6:.1f} MB "
+                    f"({pct:.1f}%)",
+                    end="", flush=True,
+                )
             else:
-                print(f"\r  Downloading {name}: {downloaded / 1e6:.1f} MB",
-                      end="", flush=True)
+                print(
+                    f"\r  Downloading {name}: {downloaded / 1e6:.1f} MB",
+                    end="", flush=True,
+                )
     print()
 
 
-def reassemble(parts: list[Path], output: Path) -> None:
+def reassemble(parts: list, output: Path) -> None:
     """Concatenate split parts into the original archive."""
     print(f"Reassembling {len(parts)} parts into {output.name} ...")
     with open(output, "wb") as out:
@@ -88,7 +94,7 @@ def reassemble(parts: list[Path], output: Path) -> None:
                     if not chunk:
                         break
                     out.write(chunk)
-    print(f"  Done — {output.name} ({output.stat().st_size / 1e6:.1f} MB)")
+    print(f"  Done - {output.name} ({output.stat().st_size / 1e6:.1f} MB)")
 
 
 def extract(archive: Path, output_dir: Path) -> None:
@@ -104,17 +110,18 @@ def main():
         description="Download LLM evaluation data from GitHub release."
     )
     parser.add_argument(
-        "--output-dir", "-o", default=".",
+        "--output-dir", "-o",
+        default=".",
         help="Directory to save downloaded files (default: current directory)",
     )
     parser.add_argument(
-        "--tag", "-t", default="semmeddb-v1.0",
-        "--tag", "-t", default="semmeddb-v1.0",
-        help="Release tag to download (default: semmeddb-v1.0). "
-             "Options: tmkp-v1.0, semmeddb-v1.0",
+        "--tag", "-t",
+        default="tmkp-v1.0",
+        help="Release tag to download (default: tmkp-v1.0). Options: tmkp-v1.0, semmeddb-v1.0",
     )
     parser.add_argument(
-        "--no-extract", action="store_true",
+        "--no-extract",
+        action="store_true",
         help="Skip extraction after download/reassembly",
     )
     args = parser.parse_args()
@@ -139,7 +146,8 @@ def main():
             key=lambda a: a["name"],
         )
         single_asset = next(
-            (a for a in assets if a["name"] == archive_name), None
+            (a for a in assets if a["name"] == archive_name),
+            None,
         )
     else:
         part_assets = sorted(
@@ -147,8 +155,7 @@ def main():
             key=lambda a: a["name"],
         )
         single_asset = next(
-            (a for a in assets
-             if a["name"].endswith(".tar.gz") and ".part_" not in a["name"]),
+            (a for a in assets if a["name"].endswith(".tar.gz") and ".part_" not in a["name"]),
             None,
         )
 
@@ -164,8 +171,10 @@ def main():
                 print(f"  {asset['name']} already downloaded, skipping.")
             else:
                 download_file(
-                    asset["browser_download_url"], dest,
-                    asset["name"], asset["size"]
+                    asset["browser_download_url"],
+                    dest,
+                    asset["name"],
+                    asset["size"],
                 )
             part_paths.append(dest)
 
@@ -182,8 +191,7 @@ def main():
         print("  Done.")
 
     elif single_asset:
-        print(f"Found single archive: {single_asset['name']} "
-              f"({single_asset['size'] / 1e6:.1f} MB)")
+        print(f"Found single archive: {single_asset['name']} ({single_asset['size'] / 1e6:.1f} MB)")
         archive_path = output_dir / single_asset["name"]
 
         if archive_path.exists() and archive_path.stat().st_size == single_asset["size"]:
