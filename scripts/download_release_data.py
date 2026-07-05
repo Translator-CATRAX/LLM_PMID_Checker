@@ -6,8 +6,8 @@ Usage:
     python scripts/download_release_data.py [--output-dir OUTPUT_DIR] [--tag TAG]
 
 Example:
-    python scripts/download_release_data.py --output-dir data/release
-    python scripts/download_release_data.py --output-dir . --tag v1.0
+    python scripts/download_release_data.py --output-dir results --tag tmkp-v1.0
+    python scripts/download_release_data.py --output-dir results --tag semmeddb-v1.0
 """
 
 import argparse
@@ -19,7 +19,17 @@ from urllib.error import HTTPError, URLError
 
 REPO = "RTXteam/LLM_PMID_Checker"
 API_URL = f"https://api.github.com/repos/{REPO}/releases"
-ARCHIVE_NAME = "LLM_Pmid_Evaluation_SemMedDB_v1.0.tar.gz"
+
+RELEASE_CONFIG = {
+    "tmkp-v1.0": {
+        "archive_name": "TMKP_Sentences_Evaluation_v1.0.tar.gz",
+        "description": "TMKP KGX sentence-level evaluation (gpt-oss-120b)",
+    },
+    "semmeddb-v1.0": {
+        "archive_name": "LLM_Pmid_Evaluation_SemMedDB_with_names_v1.0.tar.gz",
+        "description": "SemMedDB KGX PMID-level evaluation (gpt-oss-120b)",
+    },
+}
 CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB read chunks
 
 
@@ -93,8 +103,8 @@ def main():
         help="Directory to save downloaded files (default: current directory)",
     )
     parser.add_argument(
-        "--tag", "-t", default="v1.0",
-        help="Release tag to download (default: v1.0)",
+        "--tag", "-t", default="semmeddb-v1.0",
+        help="Release tag to download (default: semmeddb-v1.0). Options: semmeddb-v1.0, tmkp-v1.0",
     )
     parser.add_argument(
         "--no-extract", action="store_true",
