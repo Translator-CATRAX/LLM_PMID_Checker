@@ -19,7 +19,7 @@ Pre-computed evaluation results for the full SemMedDB KGX dataset are available 
 To download the pre-computed results, please use the provided download script (requires only Python stdlib):
 
 ```bash
-python scripts/download_release_data.py --output-dir results --tag v1.0
+python scripts/download_release_data.py --output-dir results --tag semmeddb-v1.0
 ```
 
 After running the command above, the following files will be downloaded:
