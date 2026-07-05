@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Download split release assets from GitHub, reassemble and extract them.
+Download release assets from GitHub, reassemble (if split) and extract them.
 
 Usage:
     python scripts/download_release_data.py [--output-dir OUTPUT_DIR] [--tag TAG]
@@ -9,6 +9,8 @@ Example:
     python scripts/download_release_data.py --output-dir results --tag tmkp-v1.0
     python scripts/download_release_data.py --output-dir results --tag semmeddb-v1.0
 """
+
+from __future__ import annotations
 
 import argparse
 import sys
@@ -30,6 +32,7 @@ RELEASE_CONFIG = {
         "description": "SemMedDB KGX PMID-level evaluation (gpt-oss-120b)",
     },
 }
+
 CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB read chunks
 
 
@@ -65,9 +68,11 @@ def download_file(url: str, dest: Path, name: str, size: int | None = None) -> N
             downloaded += len(chunk)
             if size:
                 pct = downloaded / size * 100
-                print(f"\r  Downloading {name}: {downloaded / 1e9:.2f} GB / {size / 1e9:.2f} GB ({pct:.1f}%)", end="", flush=True)
+                print(f"\r  Downloading {name}: {downloaded / 1e6:.1f} MB / "
+                      f"{size / 1e6:.1f} MB ({pct:.1f}%)", end="", flush=True)
             else:
-                print(f"\r  Downloading {name}: {downloaded / 1e9:.2f} GB", end="", flush=True)
+                print(f"\r  Downloading {name}: {downloaded / 1e6:.1f} MB",
+                      end="", flush=True)
     print()
 
 
@@ -76,14 +81,14 @@ def reassemble(parts: list[Path], output: Path) -> None:
     print(f"Reassembling {len(parts)} parts into {output.name} ...")
     with open(output, "wb") as out:
         for part in parts:
-            print(f"  Appending {part.name} ({part.stat().st_size / 1e9:.2f} GB)")
+            print(f"  Appending {part.name} ({part.stat().st_size / 1e6:.1f} MB)")
             with open(part, "rb") as inp:
                 while True:
                     chunk = inp.read(CHUNK_SIZE)
                     if not chunk:
                         break
                     out.write(chunk)
-    print(f"  Done — {output.name} ({output.stat().st_size / 1e9:.2f} GB)")
+    print(f"  Done — {output.name} ({output.stat().st_size / 1e6:.1f} MB)")
 
 
 def extract(archive: Path, output_dir: Path) -> None:
@@ -96,7 +101,7 @@ def extract(archive: Path, output_dir: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Download and reassemble LLM PMID evaluation data from GitHub release."
+        description="Download LLM evaluation data from GitHub release."
     )
     parser.add_argument(
         "--output-dir", "-o", default=".",
@@ -104,57 +109,103 @@ def main():
     )
     parser.add_argument(
         "--tag", "-t", default="semmeddb-v1.0",
-        help="Release tag to download (default: semmeddb-v1.0). Options: semmeddb-v1.0, tmkp-v1.0",
+        "--tag", "-t", default="semmeddb-v1.0",
+        help="Release tag to download (default: semmeddb-v1.0). "
+             "Options: tmkp-v1.0, semmeddb-v1.0",
     )
     parser.add_argument(
         "--no-extract", action="store_true",
-        help="Skip extraction after reassembly",
+        help="Skip extraction after download/reassembly",
     )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    config = RELEASE_CONFIG.get(args.tag)
+    if config:
+        archive_name = config["archive_name"]
+        print(f"Release: {config['description']}")
+    else:
+        archive_name = None
+        print(f"Unknown tag '{args.tag}', will attempt auto-detection.")
+
     print(f"Fetching release '{args.tag}' from {REPO} ...")
     assets = get_release_assets(args.tag)
 
-    part_assets = sorted(
-        [a for a in assets if a["name"].startswith(ARCHIVE_NAME + ".part_")],
-        key=lambda a: a["name"],
-    )
+    if archive_name:
+        part_assets = sorted(
+            [a for a in assets if a["name"].startswith(archive_name + ".part_")],
+            key=lambda a: a["name"],
+        )
+        single_asset = next(
+            (a for a in assets if a["name"] == archive_name), None
+        )
+    else:
+        part_assets = sorted(
+            [a for a in assets if ".part_" in a["name"]],
+            key=lambda a: a["name"],
+        )
+        single_asset = next(
+            (a for a in assets
+             if a["name"].endswith(".tar.gz") and ".part_" not in a["name"]),
+            None,
+        )
 
-    if not part_assets:
-        sys.exit(f"No split parts found matching '{ARCHIVE_NAME}.part_*' in release '{args.tag}'.")
+    if part_assets:
+        print(f"Found {len(part_assets)} split parts to download:")
+        for a in part_assets:
+            print(f"  {a['name']}  ({a['size'] / 1e6:.1f} MB)")
 
-    print(f"Found {len(part_assets)} parts to download:")
-    for a in part_assets:
-        print(f"  {a['name']}  ({a['size'] / 1e9:.2f} GB)")
+        part_paths = []
+        for asset in part_assets:
+            dest = output_dir / asset["name"]
+            if dest.exists() and dest.stat().st_size == asset["size"]:
+                print(f"  {asset['name']} already downloaded, skipping.")
+            else:
+                download_file(
+                    asset["browser_download_url"], dest,
+                    asset["name"], asset["size"]
+                )
+            part_paths.append(dest)
 
-    part_paths = []
-    for asset in part_assets:
-        dest = output_dir / asset["name"]
-        if dest.exists() and dest.stat().st_size == asset["size"]:
-            print(f"  {asset['name']} already downloaded, skipping.")
+        target_name = archive_name or part_assets[0]["name"].rsplit(".part_", 1)[0]
+        archive_path = output_dir / target_name
+        reassemble(part_paths, archive_path)
+
+        if not args.no_extract:
+            extract(archive_path, output_dir)
+
+        print("Cleaning up split parts ...")
+        for p in part_paths:
+            p.unlink()
+        print("  Done.")
+
+    elif single_asset:
+        print(f"Found single archive: {single_asset['name']} "
+              f"({single_asset['size'] / 1e6:.1f} MB)")
+        archive_path = output_dir / single_asset["name"]
+
+        if archive_path.exists() and archive_path.stat().st_size == single_asset["size"]:
+            print(f"  {single_asset['name']} already downloaded, skipping.")
         else:
             download_file(
-                asset["browser_download_url"], dest, asset["name"], asset["size"]
+                single_asset["browser_download_url"],
+                archive_path,
+                single_asset["name"],
+                single_asset["size"],
             )
-        part_paths.append(dest)
 
-    archive_path = output_dir / ARCHIVE_NAME
-    reassemble(part_paths, archive_path)
+        if not args.no_extract:
+            extract(archive_path, output_dir)
+    else:
+        sys.exit(f"No downloadable archive found in release '{args.tag}'.")
 
-    if not args.no_extract:
-        extract(archive_path, output_dir)
-        extracted = [f for f in output_dir.iterdir() if f.suffix == ".parquet"]
-        print(f"\nExtracted files:")
+    extracted = [f for f in output_dir.iterdir() if f.suffix == ".parquet"]
+    if extracted:
+        print(f"\nExtracted Parquet files:")
         for f in sorted(extracted):
-            print(f"  {f.name}  ({f.stat().st_size / 1e9:.2f} GB)")
-
-    print("Cleaning up split parts ...")
-    for p in part_paths:
-        p.unlink()
-    print("  Done.")
+            print(f"  {f.name}  ({f.stat().st_size / 1e6:.1f} MB)")
 
     print(f"\nAll done! Files are in: {output_dir.resolve()}")
 
